@@ -2,30 +2,31 @@
 
 **An [Intelligrit Labs](https://intelligrit.com#labs) Project**
 
+<p align="center">
+  <img src="logo.png" alt="zulip-cli logo" width="200">
+</p>
+
 A comprehensive command-line interface and Go library for the Zulip API. Provides complete scriptable access to messages, streams, users, and all Zulip features with full API coverage.
 
 ## Features
 
-- Complete Zulip API coverage - every endpoint supported
-- Send and manage messages with rich formatting
-- Create and manage streams and subscriptions
-- User and user group management
-- Real-time event streaming and message listening
-- File uploads and attachment management
-- Custom emoji and realm configuration
-- Fully scriptable with JSON output - perfect for automation
-- Type-safe Go library for building Zulip integrations
-- No config files needed - uses environment variables only
+- ✅ **Complete API coverage** - Every Zulip endpoint supported
+- ✅ **Scriptable** - JSON output by default, perfect for piping to `jq` or other tools
+- ✅ **Real-time events** - Listen for messages and events as they happen
+- ✅ **Type-safe Go library** - Use in your own Go applications
+- ✅ **No config files** - Simple environment variable authentication
+- ✅ **Stream management** - Create, update, subscribe, manage topics
+- ✅ **Message operations** - Send, fetch, update, delete, reactions
+- ✅ **User management** - List, create, update, presence tracking
+- ✅ **File uploads** - Upload and manage attachments
 
 ## Installation
-
-### From Source
 
 ```bash
 go install github.com/intelligrit/zulip-cli/cmd/zulip-cli@latest
 ```
 
-### Build Locally
+Or build from source:
 
 ```bash
 git clone https://github.com/intelligrit/zulip-cli.git
@@ -47,33 +48,34 @@ export ZULIP_API_KEY=your_api_key_here
 
 You can get your API key from your Zulip account settings.
 
+For convenience, add to your shell profile:
+```bash
+# ~/.bashrc or ~/.zshrc
+export ZULIP_URL=https://your-org.zulipchat.com
+export ZULIP_EMAIL=bot@example.com
+export ZULIP_API_KEY=your_api_key_here
+```
+
 ### Basic Usage
 
-Send a message to a stream:
-
 ```bash
+# Send a message to a stream
 zulip-cli send-message --stream general --topic "Hello" --content "Hi everyone!"
-```
 
-Send a direct message:
+# Send a direct message
+zulip-cli send-message --to user@example.com --content "Private message"
 
-```bash
-zulip-cli send-message --to user1@example.com,user2@example.com --content "Private message"
-```
-
-List all streams:
-
-```bash
+# List all streams
 zulip-cli list-streams
-```
 
-Get recent messages from a stream:
-
-```bash
+# Get recent messages
 zulip-cli get-messages --stream general --num-before 10
+
+# Listen for new messages
+zulip-cli listen --messages-only
 ```
 
-## Commands
+## Usage
 
 ### Messages
 
@@ -99,20 +101,11 @@ zulip-cli delete-message 12345
 # Add emoji reaction
 zulip-cli add-reaction 12345 thumbs_up
 
-# Remove emoji reaction
-zulip-cli remove-reaction 12345 thumbs_up
-
 # Upload a file
 zulip-cli upload-file document.pdf
 
 # Mark all messages as read
 zulip-cli mark-all-as-read
-
-# Mark stream as read
-zulip-cli mark-stream-as-read 42
-
-# Mark topic as read
-zulip-cli mark-topic-as-read 42 "topic-name"
 
 # Get message edit history
 zulip-cli get-message-history 12345
@@ -136,9 +129,6 @@ zulip-cli update-stream 42 --description "New description"
 # Delete a stream
 zulip-cli delete-stream 42
 
-# List topics in a stream
-zulip-cli list-stream-topics 42
-
 # Subscribe to streams
 zulip-cli subscribe engineering design product
 
@@ -148,17 +138,11 @@ zulip-cli unsubscribe random
 # List your subscriptions
 zulip-cli list-subscriptions
 
-# List stream subscribers
-zulip-cli list-subscribers 42
-
 # Mute a topic
 zulip-cli mute-topic --stream general --topic "off-topic"
 
-# Unmute a topic
-zulip-cli unmute-topic --stream general --topic "off-topic"
-
 # Move topic to another stream
-zulip-cli move-topic --stream-id 42 --new-stream-id 43 --topic "old-name" --new-topic "new-name"
+zulip-cli move-topic --stream-id 42 --new-stream-id 43 --topic "old-name"
 ```
 
 ### Users
@@ -179,12 +163,6 @@ zulip-cli create-user user@example.com "Full Name"
 # Update user
 zulip-cli update-user 123 --full-name "New Name"
 
-# Deactivate user
-zulip-cli deactivate-user 123
-
-# Reactivate user
-zulip-cli reactivate-user 123
-
 # Get user presence
 zulip-cli get-user-presence 123
 
@@ -192,29 +170,7 @@ zulip-cli get-user-presence 123
 zulip-cli update-presence active
 ```
 
-### User Groups
-
-```bash
-# List all user groups
-zulip-cli list-user-groups
-
-# Create a user group
-zulip-cli create-user-group "Engineering" --description "Engineering team" --members 1,2,3
-
-# Update user group
-zulip-cli update-user-group 5 --name "Backend Team"
-
-# Delete user group
-zulip-cli delete-user-group 5
-
-# Add members to group
-zulip-cli add-group-members 5 --add 10,11,12
-
-# Remove members from group
-zulip-cli remove-group-members 5 --remove 10
-```
-
-### Other
+### Other Commands
 
 ```bash
 # Get server settings
@@ -226,136 +182,87 @@ zulip-cli list-emoji
 # Upload custom emoji
 zulip-cli upload-emoji smiley emoji.png
 
-# Delete custom emoji
-zulip-cli delete-emoji smiley
-
-# List alert words
+# Manage alert words
 zulip-cli list-alert-words
-
-# Add alert words
 zulip-cli add-alert-words "urgent" "asap" "critical"
 
-# Remove alert words
-zulip-cli remove-alert-words "urgent"
-
-# Listen for new messages (runs continuously)
-zulip-cli listen --messages-only
+# Manage user groups
+zulip-cli list-user-groups
+zulip-cli create-user-group "Engineering" --description "Engineering team"
 ```
 
-## JSON Output and jq
+## JSON Output & jq Examples
 
-All commands output JSON format for easy parsing and scripting. The output is formatted with 2-space indentation for human readability while remaining machine-parseable.
+All commands output JSON by default, making zulip-cli perfect for scripting.
 
-### Pretty Printing
-
-For even prettier output, pipe through `jq`:
+### Pretty Print
 
 ```bash
+# Pretty print all streams
 zulip-cli list-streams | jq
+
+# Pretty print with color
+zulip-cli list-users | jq -C
 ```
 
-### jq Examples
-
-#### Get just stream names
+### Extracting Data
 
 ```bash
+# Get just stream names
 zulip-cli list-streams | jq -r '.streams[].name'
-```
 
-#### Filter streams by name pattern
+# Get email addresses of all users
+zulip-cli list-users | jq -r '.members[].email'
 
-```bash
-zulip-cli list-streams | jq '.streams[] | select(.name | contains("eng"))'
-```
+# Extract message content
+zulip-cli get-messages --stream general --num-before 10 | jq -r '.messages[].content'
 
-#### Count total messages
-
-```bash
+# Count total messages
 zulip-cli get-messages --stream general --num-before 100 | jq '.messages | length'
 ```
 
-#### Get messages from specific sender
+### Filtering with jq
 
 ```bash
-zulip-cli get-messages --stream general --num-before 50 | jq '.messages[] | select(.sender_full_name == "Alice")'
-```
+# Filter streams by name pattern
+zulip-cli list-streams | jq '.streams[] | select(.name | contains("eng"))'
 
-#### Extract just message content
+# Get messages from specific sender
+zulip-cli get-messages --stream general --num-before 50 | \
+  jq '.messages[] | select(.sender_full_name == "Alice")'
 
-```bash
-zulip-cli get-messages --stream general --num-before 10 | jq -r '.messages[].content'
-```
+# Find messages with reactions
+zulip-cli get-messages --stream general --num-before 100 | \
+  jq '.messages[] | select(.reactions | length > 0)'
 
-#### Get unread message count by stream
-
-```bash
-zulip-cli list-subscriptions | jq '.subscriptions[] | {stream: .name, unread: (.is_muted | not)}'
-```
-
-#### Find messages with specific reactions
-
-```bash
-zulip-cli get-messages --stream general --num-before 100 | jq '.messages[] | select(.reactions | length > 0) | {id, content, reactions}'
-```
-
-#### List users with specific role
-
-```bash
+# List admin users
 zulip-cli list-users | jq '.members[] | select(.is_admin == true) | .full_name'
-```
 
-#### Get email addresses of all users
-
-```bash
-zulip-cli list-users | jq -r '.members[].email'
-```
-
-#### Count users by bot vs human
-
-```bash
+# Count users by type
 zulip-cli list-users | jq 'group_by(.is_bot) | map({bot: .[0].is_bot, count: length})'
-```
 
-#### Find streams you're subscribed to
-
-```bash
-zulip-cli list-subscriptions | jq -r '.subscriptions[].name'
-```
-
-#### Get topics with recent activity
-
-```bash
+# Get topics with recent activity
 zulip-cli list-stream-topics 42 | jq '.topics | sort_by(.max_id) | reverse | .[0:5]'
 ```
 
-#### Format messages as CSV
+### Format Conversions
 
 ```bash
-zulip-cli get-messages --stream general --num-before 10 | jq -r '.messages[] | [.id, .sender_full_name, .subject, .content] | @csv'
-```
+# Format messages as CSV
+zulip-cli get-messages --stream general --num-before 10 | \
+  jq -r '.messages[] | [.id, .sender_full_name, .subject, .content] | @csv'
 
-#### Find messages with attachments
+# Create a table of streams
+zulip-cli list-streams | \
+  jq -r '.streams[] | "\(.stream_id)\t\(.name)\t\(.description)"' | column -t
 
-```bash
-zulip-cli get-messages --stream general --num-before 100 | jq '.messages[] | select(.content | contains("/user_uploads/"))'
-```
-
-#### Get user group members
-
-```bash
-zulip-cli list-user-groups | jq '.user_groups[] | {name, member_count: (.members | length)}'
-```
-
-#### Filter active users only
-
-```bash
-zulip-cli list-users | jq '.members[] | select(.is_active == true) | {name: .full_name, email}'
+# Export to YAML
+zulip-cli get-profile | yq -P
 ```
 
 ### Scripting Examples
 
-#### Send daily digest
-
+**Send daily digest:**
 ```bash
 #!/bin/bash
 STREAM="general"
@@ -364,7 +271,8 @@ DATE=$(date +%Y-%m-%d)
 
 # Get today's messages
 MESSAGES=$(zulip-cli get-messages --stream "$STREAM" --num-before 100 | \
-  jq -r ".messages[] | select(.timestamp > $(date -d 'today' +%s)) | \"- [\(.sender_full_name)]: \(.content)\""
+  jq -r ".messages[] | select(.timestamp > $(date -d 'today' +%s)) | \
+    \"- [\(.sender_full_name)]: \(.content)\""
 )
 
 # Send digest
@@ -374,8 +282,7 @@ zulip-cli send-message \
   --content "**Digest for $DATE**\n\n$MESSAGES"
 ```
 
-#### Monitor for mentions
-
+**Monitor for mentions:**
 ```bash
 #!/bin/bash
 MY_NAME="Alice"
@@ -385,29 +292,14 @@ zulip-cli listen --messages-only | jq --unbuffered -r \
    \"[MENTION] \(.sender_full_name) in #\(.display_recipient)/\(.subject): \(.content)\""
 ```
 
-#### Archive old messages
-
-```bash
-#!/bin/bash
-# Get message IDs older than 30 days
-CUTOFF=$(date -d '30 days ago' +%s)
-
-zulip-cli get-messages --stream archive --num-before 1000 | \
-  jq -r ".messages[] | select(.timestamp < $CUTOFF) | .id" | \
-  while read -r msg_id; do
-    echo "Deleting message $msg_id"
-    zulip-cli delete-message "$msg_id"
-  done
-```
-
-#### Bulk subscribe users to stream
-
+**Bulk subscribe users:**
 ```bash
 #!/bin/bash
 STREAM="announcements"
 
 # Get all active user emails
-USER_EMAILS=$(zulip-cli list-users | jq -r '.members[] | select(.is_active == true and .is_bot == false) | .email')
+USER_EMAILS=$(zulip-cli list-users | \
+  jq -r '.members[] | select(.is_active == true and .is_bot == false) | .email')
 
 # Subscribe them all
 for email in $USER_EMAILS; do
@@ -416,42 +308,37 @@ for email in $USER_EMAILS; do
 done
 ```
 
-#### Generate message statistics
-
+**Generate message statistics:**
 ```bash
 #!/bin/bash
 STREAM="general"
+MESSAGES=$(zulip-cli get-messages --stream "$STREAM" --num-before 500)
 
 echo "Message Statistics for #$STREAM"
 echo "================================"
-
-MESSAGES=$(zulip-cli get-messages --stream "$STREAM" --num-before 500)
-
 echo -n "Total messages: "
 echo "$MESSAGES" | jq '.messages | length'
 
 echo -n "Unique senders: "
 echo "$MESSAGES" | jq '[.messages[].sender_full_name] | unique | length'
 
-echo -n "Messages with reactions: "
-echo "$MESSAGES" | jq '[.messages[] | select(.reactions | length > 0)] | length'
-
 echo "Top 5 senders:"
-echo "$MESSAGES" | jq -r '[.messages | group_by(.sender_full_name) | .[] | {sender: .[0].sender_full_name, count: length}] | sort_by(.count) | reverse | .[0:5] | .[] | "  \(.sender): \(.count) messages"'
+echo "$MESSAGES" | jq -r '[.messages | group_by(.sender_full_name) | .[] |
+  {sender: .[0].sender_full_name, count: length}] |
+  sort_by(.count) | reverse | .[0:5] | .[] |
+  "  \(.sender): \(.count) messages"'
 ```
 
-#### Watch for keywords and notify
-
+**Watch for keywords:**
 ```bash
 #!/bin/bash
 KEYWORDS=("urgent" "critical" "help")
 
 zulip-cli listen --messages-only | jq --unbuffered -r \
   "select(.content | ascii_downcase | test(\"$(IFS='|'; echo "${KEYWORDS[*]}")\")) | \
-   \"[ALERT] \(.sender_full_name) in #\(.display_recipient)/\(.subject): \(.content)\"" | \
+   \"[ALERT] \(.sender_full_name): \(.content)\"" | \
   while read -r alert; do
     echo "$alert"
-    # Send notification (e.g., osascript, notify-send, etc.)
     osascript -e "display notification \"$alert\" with title \"Zulip Alert\""
   done
 ```
@@ -478,7 +365,7 @@ import (
 )
 
 func main() {
-    // Create client (uses ZULIP_URL, ZULIP_EMAIL, ZULIP_API_KEY env vars)
+    // Create client (uses environment variables)
     c, err := client.NewClient()
     if err != nil {
         log.Fatal(err)
@@ -512,14 +399,6 @@ func main() {
     for _, msg := range messages.Messages {
         fmt.Printf("[%s] %s: %s\n", msg.Subject, msg.SenderFullName, msg.Content)
     }
-
-    // Listen for new messages
-    err = c.CallOnEachMessage(func(msg types.Message) {
-        fmt.Printf("New message from %s: %s\n", msg.SenderFullName, msg.Content)
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
 }
 ```
 
@@ -535,6 +414,20 @@ config := client.Config{
 }
 
 c, err := client.NewClientWithConfig(config)
+```
+
+### Event Streaming
+
+```go
+// Listen for all events
+err := c.CallOnEachEvent(func(event map[string]interface{}) {
+    fmt.Printf("Event: %v\n", event)
+}, []string{"message", "reaction"}, nil)
+
+// Listen for messages only
+err := c.CallOnEachMessage(func(msg types.Message) {
+    fmt.Printf("Message from %s: %s\n", msg.SenderFullName, msg.Content)
+})
 ```
 
 ## Project Structure
@@ -565,23 +458,6 @@ zulip-cli/
 ├── README.md
 └── go.mod
 ```
-
-## How It Works
-
-zulip-cli is a complete Go reimplementation of the official Zulip Python API client. It provides:
-
-- Full REST API coverage - every endpoint supported
-- Type-safe request/response structures
-- Automatic retry with exponential backoff
-- Real-time event streaming via long-polling
-- Efficient HTTP connection pooling
-- Environment variable-based configuration
-
-## Requirements
-
-- Go 1.23+ (for building from source)
-- A Zulip server (cloud or self-hosted)
-- API credentials (email + API key)
 
 ## Development
 
@@ -617,43 +493,26 @@ go test ./...
 
 The library provides complete coverage of the Zulip API including:
 
-- **Messages**: Send, fetch, update, delete, reactions, flags, rendering
-- **Streams**: Create, update, delete, subscribe, topics, email addresses
-- **Users**: List, create, update, deactivate, presence, alert words
-- **User Groups**: Create, update, delete, manage members
-- **Emoji**: List, upload, delete custom emoji
-- **Realm**: Linkifiers, profile fields, server settings
-- **Events**: Real-time event streaming and message listening
-- **Files**: Upload and manage attachments
+- **Messages** - Send, fetch, update, delete, reactions, flags, rendering
+- **Streams** - Create, update, delete, subscribe, topics, email addresses
+- **Users** - List, create, update, deactivate, presence, alert words
+- **User Groups** - Create, update, delete, manage members
+- **Emoji** - List, upload, delete custom emoji
+- **Realm** - Linkifiers, profile fields, server settings
+- **Events** - Real-time event streaming and message listening
+- **Files** - Upload and manage attachments
 
 ## Roadmap
 
-Future enhancements:
-
-- YAML output format support
-- Table output format for better CLI readability
-- Configuration file support (optional)
-- Shell completion scripts
-- Webhooks/outgoing webhooks support
-- Message drafts management
-- Typing indicators
-- Read receipts
-
-## Contributing
-
-Contributions are welcome! This project follows standard Go conventions.
-
-### Guidelines
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes following Go best practices
-4. Write tests for new functionality
-5. Ensure all tests pass
-6. Run `go fmt` and `go vet`
-7. Commit your changes
-8. Push to the branch
-9. Open a Pull Request
+- [ ] YAML output format support
+- [ ] Table output format for better CLI readability
+- [ ] Configuration file support (optional)
+- [ ] Shell completion scripts
+- [ ] Webhooks/outgoing webhooks support
+- [ ] Message drafts management
+- [ ] Typing indicators
+- [ ] Read receipts
+- [ ] OPML export for subscriptions
 
 ## About Intelligrit Labs
 
@@ -662,6 +521,29 @@ zulip-cli is developed by [Intelligrit Labs](https://intelligrit.com#labs), the 
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details
+
+## Contributing
+
+Contributions are welcome! This project follows standard Go conventions.
+
+### Guidelines
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes following Go best practices
+4. Write tests for new functionality
+5. Ensure all tests pass (`go test ./...`)
+6. Run `go fmt` and `go vet`
+7. Commit your changes (`git commit -m 'Add amazing feature'`)
+8. Push to the branch (`git push origin feature/amazing-feature`)
+9. Open a Pull Request
+
+### Code Style
+
+- Follow standard Go formatting (`gofmt`, `go vet`)
+- Write clear, descriptive commit messages
+- Add comments for exported functions and types
+- Keep functions focused and modular
 
 ## Support
 

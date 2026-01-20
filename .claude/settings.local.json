@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone:*)",
+      "Bash(go mod init:*)",
+      "Bash(go get:*)",
+      "Bash(go build:*)",
+      "Bash(./zulip-cli:*)",
+      "Bash(find:*)",
+      "Bash(git init:*)"
+    ]
+  }
+}

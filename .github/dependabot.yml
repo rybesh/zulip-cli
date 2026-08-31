@@ -1,0 +1,27 @@
+version: 2
+
+updates:
+  # The workflow pins each action to a major tag, which goes stale quietly:
+  # GitHub retires runner Node versions on its own schedule, and an action left
+  # behind starts warning and eventually stops working.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  # cobra and pflag are the only direct dependencies, so one grouped pull
+  # request a week is less noise than one per module.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      go-modules:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps"

@@ -9,8 +9,8 @@ import (
 
 // GetUsersRequest represents a users list request
 type GetUsersRequest struct {
-	ClientGravatar             bool `json:"client_gravatar,omitempty"`
-	IncludeCustomProfileFields bool `json:"include_custom_profile_fields,omitempty"`
+	ClientGravatar             *bool `json:"client_gravatar,omitempty"`
+	IncludeCustomProfileFields *bool `json:"include_custom_profile_fields,omitempty"`
 }
 
 // GetUsersResponse represents users list response
@@ -22,11 +22,11 @@ type GetUsersResponse struct {
 // GetUsers retrieves all users in the organization
 func (c *Client) GetUsers(req GetUsersRequest) (*GetUsersResponse, error) {
 	params := map[string]interface{}{}
-	if req.ClientGravatar {
-		params["client_gravatar"] = true
+	if req.ClientGravatar != nil {
+		params["client_gravatar"] = *req.ClientGravatar
 	}
-	if req.IncludeCustomProfileFields {
-		params["include_custom_profile_fields"] = true
+	if req.IncludeCustomProfileFields != nil {
+		params["include_custom_profile_fields"] = *req.IncludeCustomProfileFields
 	}
 
 	body, err := c.Get("users", params)
@@ -49,10 +49,10 @@ type GetUserResponse struct {
 }
 
 // GetUser retrieves a user by ID
-func (c *Client) GetUser(userID int, includeCustomProfileFields bool) (*GetUserResponse, error) {
+func (c *Client) GetUser(userID int, includeCustomProfileFields *bool) (*GetUserResponse, error) {
 	params := map[string]interface{}{}
-	if includeCustomProfileFields {
-		params["include_custom_profile_fields"] = true
+	if includeCustomProfileFields != nil {
+		params["include_custom_profile_fields"] = *includeCustomProfileFields
 	}
 
 	body, err := c.Get(fmt.Sprintf("users/%d", userID), params)
@@ -138,7 +138,7 @@ func (c *Client) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) 
 // UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
 	UserID      int                    `json:"user_id"`
-	FullName    string                 `json:"full_name,omitempty"`
+	FullName    *string                `json:"full_name,omitempty"`
 	Role        int                    `json:"role,omitempty"`
 	ProfileData map[string]interface{} `json:"profile_data,omitempty"`
 }
@@ -146,8 +146,8 @@ type UpdateUserRequest struct {
 // UpdateUser updates a user
 func (c *Client) UpdateUser(req UpdateUserRequest) (*types.Response, error) {
 	params := map[string]interface{}{}
-	if req.FullName != "" {
-		params["full_name"] = req.FullName
+	if req.FullName != nil {
+		params["full_name"] = *req.FullName
 	}
 	if req.Role > 0 {
 		params["role"] = req.Role
@@ -254,8 +254,8 @@ func (c *Client) GetRealmPresence() (*GetRealmPresenceResponse, error) {
 // UpdatePresenceRequest represents a presence update request
 type UpdatePresenceRequest struct {
 	Status       string `json:"status"` // "active" or "idle"
-	PingOnly     bool   `json:"ping_only,omitempty"`
-	NewUserInput bool   `json:"new_user_input,omitempty"`
+	PingOnly     *bool  `json:"ping_only,omitempty"`
+	NewUserInput *bool  `json:"new_user_input,omitempty"`
 }
 
 // UpdatePresenceResponse represents presence update response
@@ -270,11 +270,11 @@ func (c *Client) UpdatePresence(req UpdatePresenceRequest) (*UpdatePresenceRespo
 	params := map[string]interface{}{
 		"status": req.Status,
 	}
-	if req.PingOnly {
-		params["ping_only"] = true
+	if req.PingOnly != nil {
+		params["ping_only"] = *req.PingOnly
 	}
-	if req.NewUserInput {
-		params["new_user_input"] = true
+	if req.NewUserInput != nil {
+		params["new_user_input"] = *req.NewUserInput
 	}
 
 	body, err := c.Post("users/me/presence", params)

@@ -1,22 +1,36 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
-	"strings"
+	"errors"
+	"net/http"
 	"time"
 
 	"github.com/rybesh/zulip-cli/types"
+)
+
+const (
+	// longPollTimeout bounds a blocking events fetch. The server holds the
+	// connection open until it has something to say, so this is well above the
+	// ordinary request timeout.
+	longPollTimeout = 90 * time.Second
+
+	// Backoff bounds for retrying an events fetch that failed for reasons the
+	// caller cannot fix, such as a network blip or a server restart.
+	initialEventBackoff = 1 * time.Second
+	maxEventBackoff     = 30 * time.Second
 )
 
 // RegisterRequest represents an event queue registration request
 type RegisterRequest struct {
 	EventTypes         []string               `json:"event_types,omitempty"`
 	Narrow             [][]string             `json:"narrow,omitempty"`
-	AllPublicStreams   bool                   `json:"all_public_streams,omitempty"`
-	IncludeSubscribers bool                   `json:"include_subscribers,omitempty"`
-	ClientGravatar     bool                   `json:"client_gravatar,omitempty"`
-	SlimPresence       bool                   `json:"slim_presence,omitempty"`
-	ApplyMarkdown      bool                   `json:"apply_markdown,omitempty"`
+	AllPublicStreams   *bool                  `json:"all_public_streams,omitempty"`
+	IncludeSubscribers *bool                  `json:"include_subscribers,omitempty"`
+	ClientGravatar     *bool                  `json:"client_gravatar,omitempty"`
+	SlimPresence       *bool                  `json:"slim_presence,omitempty"`
+	ApplyMarkdown      *bool                  `json:"apply_markdown,omitempty"`
 	ClientCapabilities map[string]interface{} `json:"client_capabilities,omitempty"`
 }
 
@@ -40,20 +54,20 @@ func (c *Client) Register(req RegisterRequest) (*RegisterResponse, error) {
 	if len(req.Narrow) > 0 {
 		params["narrow"] = req.Narrow
 	}
-	if req.AllPublicStreams {
-		params["all_public_streams"] = true
+	if req.AllPublicStreams != nil {
+		params["all_public_streams"] = *req.AllPublicStreams
 	}
-	if req.IncludeSubscribers {
-		params["include_subscribers"] = true
+	if req.IncludeSubscribers != nil {
+		params["include_subscribers"] = *req.IncludeSubscribers
 	}
-	if req.ClientGravatar {
-		params["client_gravatar"] = true
+	if req.ClientGravatar != nil {
+		params["client_gravatar"] = *req.ClientGravatar
 	}
-	if req.SlimPresence {
-		params["slim_presence"] = true
+	if req.SlimPresence != nil {
+		params["slim_presence"] = *req.SlimPresence
 	}
-	if req.ApplyMarkdown {
-		params["apply_markdown"] = true
+	if req.ApplyMarkdown != nil {
+		params["apply_markdown"] = *req.ApplyMarkdown
 	}
 	if len(req.ClientCapabilities) > 0 {
 		params["client_capabilities"] = req.ClientCapabilities
@@ -87,6 +101,12 @@ type GetEventsResponse struct {
 
 // GetEvents retrieves events from a queue
 func (c *Client) GetEvents(req GetEventsRequest) (*GetEventsResponse, error) {
+	return c.GetEventsContext(context.Background(), req)
+}
+
+// GetEventsContext retrieves events from a queue, stopping early if ctx is
+// cancelled.
+func (c *Client) GetEventsContext(ctx context.Context, req GetEventsRequest) (*GetEventsResponse, error) {
 	params := map[string]interface{}{
 		"queue_id":      req.QueueID,
 		"last_event_id": req.LastEventID,
@@ -95,16 +115,14 @@ func (c *Client) GetEvents(req GetEventsRequest) (*GetEventsResponse, error) {
 		params["dont_block"] = true
 	}
 
-	// Use a longer timeout for long-polling
-	originalTimeout := c.HTTPClient.Timeout
-	if !req.DontBlock {
-		c.HTTPClient.Timeout = 90 * time.Second
+	// A blocking fetch waits on the server, so allow it more time than an
+	// ordinary request.
+	timeout := c.requestTimeout()
+	if !req.DontBlock && timeout > 0 && timeout < longPollTimeout {
+		timeout = longPollTimeout
 	}
-	defer func() {
-		c.HTTPClient.Timeout = originalTimeout
-	}()
 
-	body, err := c.Get("events", params)
+	body, err := c.doRequestContext(ctx, timeout, "GET", "events", params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +157,22 @@ func (c *Client) Deregister(queueID string) (*types.Response, error) {
 // EventCallback is a function type for handling events
 type EventCallback func(event map[string]interface{})
 
-// CallOnEachEvent registers an event queue and calls the callback for each event
-func (c *Client) CallOnEachEvent(callback EventCallback, eventTypes []string, narrow [][]string) error {
+// retryableEventError reports whether an events fetch is worth waiting out. A
+// network blip or a server-side failure is transient; a request the server
+// rejected will be rejected again.
+func retryableEventError(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode >= 500 || apiErr.StatusCode == http.StatusTooManyRequests
+	}
+	return true
+}
+
+// CallOnEachEvent registers an event queue and calls the callback for each
+// event until ctx is cancelled. Transient failures are retried with backoff, so
+// a brief outage does not end a long-running listener, and the queue is
+// deregistered on the way out rather than left for the server to expire.
+func (c *Client) CallOnEachEvent(ctx context.Context, callback EventCallback, eventTypes []string, narrow [][]string) error {
 	// Register event queue
 	registerReq := RegisterRequest{
 		EventTypes: eventTypes,
@@ -155,28 +187,61 @@ func (c *Client) CallOnEachEvent(callback EventCallback, eventTypes []string, na
 	queueID := registration.QueueID
 	lastEventID := registration.LastEventID
 
+	defer func() {
+		// Best effort: the caller is on its way out either way, and the server
+		// expires abandoned queues eventually.
+		_, _ = c.Deregister(queueID)
+	}()
+
+	backoff := initialEventBackoff
+
 	// Continuously fetch and process events
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+
 		eventsReq := GetEventsRequest{
 			QueueID:     queueID,
 			LastEventID: lastEventID,
 		}
 
-		events, err := c.GetEvents(eventsReq)
+		events, err := c.GetEventsContext(ctx, eventsReq)
 		if err != nil {
-			// If we get a bad event queue error, re-register
-			// Check if error message contains BAD_EVENT_QUEUE_ID
-			if strings.Contains(err.Error(), "BAD_EVENT_QUEUE_ID") {
-				registration, err = c.Register(registerReq)
-				if err != nil {
-					return err
-				}
-				queueID = registration.QueueID
-				lastEventID = registration.LastEventID
-				continue
+			// Cancellation is how a listener normally ends, not a failure.
+			if ctx.Err() != nil {
+				return nil
 			}
-			return err
+
+			// The queue expired or was garbage collected: get a new one.
+			if APIErrorCode(err) == "BAD_EVENT_QUEUE_ID" {
+				var registerErr error
+				registration, registerErr = c.Register(registerReq)
+				if registerErr == nil {
+					queueID = registration.QueueID
+					lastEventID = registration.LastEventID
+					backoff = initialEventBackoff
+					continue
+				}
+				err = registerErr
+			}
+
+			if !retryableEventError(err) {
+				return err
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(backoff):
+			}
+			if backoff *= 2; backoff > maxEventBackoff {
+				backoff = maxEventBackoff
+			}
+			continue
 		}
+
+		backoff = initialEventBackoff
 
 		for _, event := range events.Events {
 			if eventType, ok := event["type"].(string); ok {
@@ -200,9 +265,10 @@ func (c *Client) CallOnEachEvent(callback EventCallback, eventTypes []string, na
 // MessageCallback is a function type for handling messages
 type MessageCallback func(message types.Message)
 
-// CallOnEachMessage registers an event queue and calls the callback for each message
-func (c *Client) CallOnEachMessage(callback MessageCallback) error {
-	return c.CallOnEachEvent(func(event map[string]interface{}) {
+// CallOnEachMessage registers an event queue and calls the callback for each
+// message until ctx is cancelled.
+func (c *Client) CallOnEachMessage(ctx context.Context, callback MessageCallback) error {
+	return c.CallOnEachEvent(ctx, func(event map[string]interface{}) {
 		if eventType, ok := event["type"].(string); ok && eventType == "message" {
 			if msgData, ok := event["message"]; ok {
 				msgJSON, _ := json.Marshal(msgData)

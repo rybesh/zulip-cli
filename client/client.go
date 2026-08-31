@@ -2,8 +2,11 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -11,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +23,10 @@ import (
 
 const (
 	APIVersion = "v1"
+
+	// DefaultTimeout bounds a single request. Long-polling for events needs
+	// longer and sets its own bound; see GetEvents.
+	DefaultTimeout = 15 * time.Second
 )
 
 // Client is the main Zulip API client
@@ -29,41 +37,121 @@ type Client struct {
 	HTTPClient *http.Client
 	UserAgent  string
 	Verbose    bool
+	// Timeout bounds a single request. Zero means DefaultTimeout; a negative
+	// value means no timeout at all.
+	Timeout time.Duration
 }
 
 // Config holds configuration for creating a new client
 type Config struct {
-	URL           string
-	Email         string
-	APIKey        string
-	Insecure      bool
-	CertBundle    string
+	URL      string
+	Email    string
+	APIKey   string
+	Insecure bool
+	// CertBundle is a PEM file of certificate authorities to trust instead of
+	// the system roots, for servers using a private CA.
+	CertBundle string
+	// ClientCert and ClientCertKey are a PEM certificate/key pair to present
+	// when the server asks for a client certificate. Both or neither.
 	ClientCert    string
 	ClientCertKey string
-	Verbose       bool
+	// Timeout bounds a single request. Zero means DefaultTimeout.
+	Timeout time.Duration
+	Verbose bool
+}
+
+// APIError is an error response from the Zulip server, as opposed to a failure
+// to reach it. Callers can inspect Code to react to a specific condition; see
+// APIErrorCode.
+type APIError struct {
+	StatusCode int
+	Code       string
+	Msg        string
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	switch {
+	case e.Msg == "":
+		return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+	case e.StatusCode == http.StatusUnauthorized:
+		// Credentials are supplied by the environment, so name them: this is
+		// the first point at which a wrong key becomes visible.
+		return fmt.Sprintf("API error: %s (check ZULIP_EMAIL and ZULIP_API_KEY)", e.Msg)
+	default:
+		return fmt.Sprintf("API error: %s", e.Msg)
+	}
+}
+
+// APIErrorCode returns the Zulip error code carried by err, or "" if err did
+// not come from a server error response.
+func APIErrorCode(err error) string {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Code
+	}
+	return ""
+}
+
+// FormFile is a file to send as part of a multipart request.
+type FormFile struct {
+	// Filename is the name the server records. It should be a bare file name,
+	// not the local path the user happened to type.
+	Filename string
+	Reader   io.Reader
 }
 
 // NewClient creates a new Zulip API client from environment variables
 func NewClient() (*Client, error) {
-	url := os.Getenv("ZULIP_URL")
-	email := os.Getenv("ZULIP_EMAIL")
-	apiKey := os.Getenv("ZULIP_API_KEY")
+	cfg := Config{
+		URL:           os.Getenv("ZULIP_URL"),
+		Email:         os.Getenv("ZULIP_EMAIL"),
+		APIKey:        os.Getenv("ZULIP_API_KEY"),
+		CertBundle:    os.Getenv("ZULIP_CERT_BUNDLE"),
+		ClientCert:    os.Getenv("ZULIP_CLIENT_CERT"),
+		ClientCertKey: os.Getenv("ZULIP_CLIENT_CERT_KEY"),
+	}
 
-	if url == "" {
+	if cfg.URL == "" {
 		return nil, fmt.Errorf("ZULIP_URL environment variable is required")
 	}
-	if email == "" {
+	if cfg.Email == "" {
 		return nil, fmt.Errorf("ZULIP_EMAIL environment variable is required")
 	}
-	if apiKey == "" {
+	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("ZULIP_API_KEY environment variable is required")
 	}
 
-	return NewClientWithConfig(Config{
-		URL:    url,
-		Email:  email,
-		APIKey: apiKey,
-	})
+	if v := os.Getenv("ZULIP_INSECURE"); v != "" {
+		insecure, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ZULIP_INSECURE %q: want a boolean", v)
+		}
+		cfg.Insecure = insecure
+	}
+
+	if v := os.Getenv("ZULIP_TIMEOUT"); v != "" {
+		timeout, err := ParseTimeout(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ZULIP_TIMEOUT: %w", err)
+		}
+		cfg.Timeout = timeout
+	}
+
+	return NewClientWithConfig(cfg)
+}
+
+// ParseTimeout reads a request timeout written either as a Go duration ("45s",
+// "2m") or as a bare number of seconds ("45").
+func ParseTimeout(s string) (time.Duration, error) {
+	if timeout, err := time.ParseDuration(s); err == nil {
+		return timeout, nil
+	}
+	seconds, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a duration such as 45s or a number of seconds", s)
+	}
+	return time.Duration(seconds * float64(time.Second)), nil
 }
 
 // NewClientWithConfig creates a new Zulip API client with custom configuration
@@ -91,40 +179,91 @@ func NewClientWithConfig(cfg Config) (*Client, error) {
 	}
 	baseURL += "/"
 
-	// Configure HTTP client
-	transport := &http.Transport{}
-	if cfg.Insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	tlsConfig, err := tlsConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
 
+	// Timeouts are applied per request, so that long-polling can raise its own
+	// bound without disturbing the shared HTTP client.
 	httpClient := &http.Client{
-		Transport: transport,
-		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+	}
+
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = DefaultTimeout
 	}
 
 	userAgent := fmt.Sprintf("ZulipGo/%s (%s; %s)", ClientVersion, runtime.GOOS, runtime.GOARCH)
 
-	client := &Client{
+	return &Client{
 		BaseURL:    baseURL,
 		Email:      cfg.Email,
 		APIKey:     cfg.APIKey,
 		HTTPClient: httpClient,
 		UserAgent:  userAgent,
 		Verbose:    cfg.Verbose,
+		Timeout:    timeout,
+	}, nil
+}
+
+// tlsConfig builds the TLS settings for the configured trust and client
+// certificate options.
+func tlsConfig(cfg Config) (*tls.Config, error) {
+	conf := &tls.Config{InsecureSkipVerify: cfg.Insecure}
+
+	if cfg.CertBundle != "" {
+		pemBytes, err := os.ReadFile(cfg.CertBundle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read certificate bundle: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pemBytes) {
+			return nil, fmt.Errorf("no certificates found in certificate bundle %s", cfg.CertBundle)
+		}
+		conf.RootCAs = pool
 	}
 
-	// Verify connection by fetching server settings
-	_, err := client.GetServerSettings()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to server: %w", err)
+	switch {
+	case cfg.ClientCert != "" && cfg.ClientCertKey == "":
+		return nil, fmt.Errorf("client certificate given without its key")
+	case cfg.ClientCert == "" && cfg.ClientCertKey != "":
+		return nil, fmt.Errorf("client certificate key given without a certificate")
+	case cfg.ClientCert != "":
+		cert, err := tls.LoadX509KeyPair(cfg.ClientCert, cfg.ClientCertKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		conf.Certificates = []tls.Certificate{cert}
 	}
 
-	return client, nil
+	return conf, nil
+}
+
+// requestTimeout is the bound for an ordinary request.
+func (c *Client) requestTimeout() time.Duration {
+	if c.Timeout == 0 {
+		return DefaultTimeout
+	}
+	return c.Timeout
 }
 
 // doRequest performs an HTTP request with authentication
-func (c *Client) doRequest(method, endpoint string, params map[string]interface{}, files map[string]io.Reader) ([]byte, error) {
+func (c *Client) doRequest(method, endpoint string, params map[string]interface{}, files map[string]FormFile) ([]byte, error) {
+	return c.doRequestContext(context.Background(), c.requestTimeout(), method, endpoint, params, files)
+}
+
+// doRequestContext performs an authenticated request, giving up after timeout
+// unless ctx is cancelled first. A timeout of zero or less means no bound.
+func (c *Client) doRequestContext(ctx context.Context, timeout time.Duration, method, endpoint string, params map[string]interface{}, files map[string]FormFile) ([]byte, error) {
 	fullURL := c.BaseURL + APIVersion + "/" + endpoint
+
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
 	var req *http.Request
 	var err error
@@ -149,15 +288,17 @@ func (c *Client) doRequest(method, endpoint string, params map[string]interface{
 
 		// Add files
 		for fieldName, file := range files {
-			part, err := writer.CreateFormFile(fieldName, fieldName)
+			part, err := writer.CreateFormFile(fieldName, file.Filename)
 			if err != nil {
 				return nil, err
 			}
-			io.Copy(part, file)
+			if _, err := io.Copy(part, file.Reader); err != nil {
+				return nil, err
+			}
 		}
 
 		writer.Close()
-		req, err = http.NewRequest(method, fullURL, body)
+		req, err = http.NewRequestWithContext(ctx, method, fullURL, body)
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +318,7 @@ func (c *Client) doRequest(method, endpoint string, params map[string]interface{
 			}
 			fullURL += "?" + values.Encode()
 		}
-		req, err = http.NewRequest(method, fullURL, nil)
+		req, err = http.NewRequestWithContext(ctx, method, fullURL, nil)
 	} else {
 		// Form data for POST/PATCH/PUT
 		values := url.Values{}
@@ -190,7 +331,7 @@ func (c *Client) doRequest(method, endpoint string, params map[string]interface{
 				values.Add(key, string(jsonBytes))
 			}
 		}
-		req, err = http.NewRequest(method, fullURL, strings.NewReader(values.Encode()))
+		req, err = http.NewRequestWithContext(ctx, method, fullURL, strings.NewReader(values.Encode()))
 		if err != nil {
 			return nil, err
 		}
@@ -226,11 +367,13 @@ func (c *Client) doRequest(method, endpoint string, params map[string]interface{
 
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
+		apiErr := &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 		var errResp types.Response
-		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Msg != "" {
-			return body, fmt.Errorf("API error: %s", errResp.Msg)
+		if err := json.Unmarshal(body, &errResp); err == nil {
+			apiErr.Msg = errResp.Msg
+			apiErr.Code = errResp.Code
 		}
-		return body, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		return body, apiErr
 	}
 
 	return body, nil
@@ -257,7 +400,7 @@ func (c *Client) Delete(endpoint string, params map[string]interface{}) ([]byte,
 }
 
 // PostWithFiles performs a POST request with file uploads
-func (c *Client) PostWithFiles(endpoint string, params map[string]interface{}, files map[string]io.Reader) ([]byte, error) {
+func (c *Client) PostWithFiles(endpoint string, params map[string]interface{}, files map[string]FormFile) ([]byte, error) {
 	return c.doRequest("POST", endpoint, params, files)
 }
 

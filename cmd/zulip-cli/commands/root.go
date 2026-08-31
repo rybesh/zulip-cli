@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/rybesh/zulip-cli/client"
 	"github.com/spf13/cobra"
@@ -35,7 +38,12 @@ var (
 	// Global flags
 	verbose bool
 	output  string
+	timeout time.Duration
 )
+
+// supportedOutputFormats lists the formats --output actually produces. Anything
+// else is refused rather than quietly answered with JSON.
+var supportedOutputFormats = []string{"json"}
 
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
@@ -56,11 +64,29 @@ Example:
   export ZULIP_API_KEY=your_api_key_here
   zulip-cli send-message --channel general --topic "Hello" --content "Hi there!"
 
+Optional settings:
+  - ZULIP_TIMEOUT: Request timeout, e.g. 45s (default 15s)
+  - ZULIP_INSECURE: Set true to skip TLS verification (not recommended)
+  - ZULIP_CERT_BUNDLE: PEM file of certificate authorities to trust
+  - ZULIP_CLIENT_CERT, ZULIP_CLIENT_CERT_KEY: PEM client certificate and key
+
 Zulip renamed streams to channels in version 9.0. This CLI follows that
 naming; the older stream spellings still work as aliases.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Past this point failures are runtime failures, not usage errors, and
+		// dumping the flag listing would only bury the message.
+		cmd.SilenceUsage = true
+
+		if !slices.Contains(supportedOutputFormats, output) {
+			return fmt.Errorf("unsupported output format %q: supported formats are %s",
+				output, strings.Join(supportedOutputFormats, ", "))
+		}
+		if timeout < 0 {
+			return fmt.Errorf("--timeout must not be negative")
+		}
+
 		// These commands do not talk to a Zulip server, so they must not
-		// require credentials or pay the cost of connecting.
+		// require credentials.
 		switch cmd.Name() {
 		case "help", "completion", "version":
 			return nil
@@ -74,6 +100,9 @@ naming; the older stream spellings still work as aliases.`,
 
 		if verbose {
 			zulipClient.Verbose = true
+		}
+		if timeout > 0 {
+			zulipClient.Timeout = timeout
 		}
 
 		return nil
@@ -92,7 +121,9 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
-	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "json", "Output format (json, yaml, table)")
+	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "json", "Output format (json)")
+	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 0,
+		"Request timeout, e.g. 45s (default 15s, or $ZULIP_TIMEOUT)")
 
 	// Add all subcommands
 	rootCmd.AddCommand(sendMessageCmd)
@@ -168,6 +199,34 @@ func printResult(data interface{}) error {
 	case "json":
 		return printJSON(data)
 	default:
-		return printJSON(data)
+		return fmt.Errorf("unsupported output format %q", output)
 	}
+}
+
+// boolFlag returns the flag's value only when the user set it, and nil
+// otherwise. Request builders send only non-nil values, so an explicit
+// --flag=false reaches the server instead of being dropped in favor of the
+// server's own default.
+func boolFlag(cmd *cobra.Command, name string) *bool {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	value, err := cmd.Flags().GetBool(name)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+// stringFlag is boolFlag for strings, so that --description "" clears a value
+// instead of meaning "leave it alone".
+func stringFlag(cmd *cobra.Command, name string) *string {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	value, err := cmd.Flags().GetString(name)
+	if err != nil {
+		return nil
+	}
+	return &value
 }

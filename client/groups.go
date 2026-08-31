@@ -64,19 +64,19 @@ func (c *Client) CreateUserGroup(req CreateUserGroupRequest) (*CreateUserGroupRe
 
 // UpdateUserGroupRequest represents a user group update request
 type UpdateUserGroupRequest struct {
-	GroupID     int    `json:"group_id"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
+	GroupID     int     `json:"group_id"`
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 // UpdateUserGroup updates a user group
 func (c *Client) UpdateUserGroup(req UpdateUserGroupRequest) (*types.Response, error) {
 	params := map[string]interface{}{}
-	if req.Name != "" {
-		params["name"] = req.Name
+	if req.Name != nil {
+		params["name"] = *req.Name
 	}
-	if req.Description != "" {
-		params["description"] = req.Description
+	if req.Description != nil {
+		params["description"] = *req.Description
 	}
 
 	body, err := c.Patch(fmt.Sprintf("user_groups/%d", req.GroupID), params)

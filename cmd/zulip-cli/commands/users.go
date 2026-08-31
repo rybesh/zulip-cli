@@ -12,10 +12,8 @@ var listUsersCmd = &cobra.Command{
 	Use:   "list-users",
 	Short: "List all users",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		includeCustomProfileFields, _ := cmd.Flags().GetBool("include-custom-profile-fields")
-
 		req := client.GetUsersRequest{
-			IncludeCustomProfileFields: includeCustomProfileFields,
+			IncludeCustomProfileFields: boolFlag(cmd, "include-custom-profile-fields"),
 		}
 
 		resp, err := zulipClient.GetUsers(req)
@@ -37,9 +35,7 @@ var getUserCmd = &cobra.Command{
 			return fmt.Errorf("invalid user ID: %w", err)
 		}
 
-		includeCustomProfileFields, _ := cmd.Flags().GetBool("include-custom-profile-fields")
-
-		resp, err := zulipClient.GetUser(userID, includeCustomProfileFields)
+		resp, err := zulipClient.GetUser(userID, boolFlag(cmd, "include-custom-profile-fields"))
 		if err != nil {
 			return err
 		}
@@ -93,8 +89,12 @@ var updateUserCmd = &cobra.Command{
 			return fmt.Errorf("invalid user ID: %w", err)
 		}
 
-		fullName, _ := cmd.Flags().GetString("full-name")
+		fullName := stringFlag(cmd, "full-name")
 		role, _ := cmd.Flags().GetInt("role")
+
+		if fullName == nil && !cmd.Flags().Changed("role") {
+			return fmt.Errorf("either --full-name or --role is required")
+		}
 
 		req := client.UpdateUserRequest{
 			UserID:   userID,

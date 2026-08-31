@@ -13,14 +13,10 @@ var listStreamsCmd = &cobra.Command{
 	Aliases: []string{"list-streams"},
 	Short:   "List all channels",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		includePublic, _ := cmd.Flags().GetBool("include-public")
-		includeSubscribed, _ := cmd.Flags().GetBool("include-subscribed")
-		includeAllActive, _ := cmd.Flags().GetBool("include-all-active")
-
 		req := client.GetStreamsRequest{
-			IncludePublic:     includePublic,
-			IncludeSubscribed: includeSubscribed,
-			IncludeAllActive:  includeAllActive,
+			IncludePublic:     boolFlag(cmd, "include-public"),
+			IncludeSubscribed: boolFlag(cmd, "include-subscribed"),
+			IncludeAllActive:  boolFlag(cmd, "include-all-active"),
 		}
 
 		resp, err := zulipClient.GetStreams(req)
@@ -54,8 +50,6 @@ var createStreamCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
-		inviteOnly, _ := cmd.Flags().GetBool("invite-only")
-		announce, _ := cmd.Flags().GetBool("announce")
 
 		req := client.CreateStreamRequest{
 			Subscriptions: []struct {
@@ -64,8 +58,8 @@ var createStreamCmd = &cobra.Command{
 			}{
 				{Name: args[0], Description: description},
 			},
-			InviteOnly: inviteOnly,
-			Announce:   announce,
+			InviteOnly: boolFlag(cmd, "invite-only"),
+			Announce:   boolFlag(cmd, "announce"),
 		}
 
 		resp, err := zulipClient.CreateStream(req)
@@ -88,8 +82,12 @@ var updateStreamCmd = &cobra.Command{
 			return fmt.Errorf("invalid stream ID: %w", err)
 		}
 
-		description, _ := cmd.Flags().GetString("description")
-		newName, _ := cmd.Flags().GetString("new-name")
+		description := stringFlag(cmd, "description")
+		newName := stringFlag(cmd, "new-name")
+
+		if description == nil && newName == nil {
+			return fmt.Errorf("either --description or --new-name is required")
+		}
 
 		req := client.UpdateStreamRequest{
 			StreamID:    streamID,
@@ -200,10 +198,8 @@ var listSubscriptionsCmd = &cobra.Command{
 	Use:   "list-subscriptions",
 	Short: "List user's channel subscriptions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		includeSubscribers, _ := cmd.Flags().GetBool("include-subscribers")
-
 		req := client.GetSubscriptionsRequest{
-			IncludeSubscribers: includeSubscribers,
+			IncludeSubscribers: boolFlag(cmd, "include-subscribers"),
 		}
 
 		resp, err := zulipClient.GetSubscriptions(req)
@@ -285,9 +281,9 @@ var moveTopicCmd = &cobra.Command{
 		}
 
 		newChannelID, _ := cmd.Flags().GetInt("new-channel-id")
-		newTopic, _ := cmd.Flags().GetString("new-topic")
+		newTopic := stringFlag(cmd, "new-topic")
 
-		if newChannelID == 0 && newTopic == "" {
+		if newChannelID == 0 && newTopic == nil {
 			return fmt.Errorf("either --new-channel-id or --new-topic is required")
 		}
 

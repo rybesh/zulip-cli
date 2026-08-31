@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -34,6 +35,12 @@ func normalizeFlagName(f *pflag.FlagSet, name string) pflag.NormalizedName {
 var (
 	// Global client instance
 	zulipClient *client.Client
+
+	// newClient builds the client the commands use, and stdout is where their
+	// results go. Both are variables so tests can run a command against a fake
+	// server and read back what it printed.
+	newClient           = client.NewClient
+	stdout    io.Writer = os.Stdout
 
 	// Global flags
 	verbose bool
@@ -93,7 +100,7 @@ naming; the older stream spellings still work as aliases.`,
 		}
 
 		var err error
-		zulipClient, err = client.NewClient()
+		zulipClient, err = newClient()
 		if err != nil {
 			return fmt.Errorf("failed to initialize Zulip client: %w", err)
 		}
@@ -188,7 +195,7 @@ func init() {
 
 // printJSON prints data as JSON
 func printJSON(data interface{}) error {
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(data)
 }

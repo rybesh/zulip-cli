@@ -1,0 +1,320 @@
+package commands
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/rybesh/zulip-cli/client"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+)
+
+// fakeZulip points the commands at a fake server and records what it received.
+type fakeZulip struct {
+	mu     sync.Mutex
+	method string
+	path   string
+	params url.Values
+	calls  int
+}
+
+func newFakeZulip(t *testing.T, body string) *fakeZulip {
+	t.Helper()
+	f := &fakeZulip{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		_ = r.ParseForm()
+		f.method, f.path, f.params = r.Method, r.URL.Path, r.Form
+		f.calls++
+		f.mu.Unlock()
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+
+	previous := newClient
+	newClient = func() (*client.Client, error) {
+		return client.NewClientWithConfig(client.Config{
+			URL: srv.URL, Email: "bot@example.com", APIKey: "key",
+		})
+	}
+	t.Cleanup(func() { newClient = previous })
+
+	return f
+}
+
+func (f *fakeZulip) snapshot() (method, path string, params url.Values, calls int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.method, f.path, f.params, f.calls
+}
+
+// run executes the CLI with args and returns what it printed. Flags are reset
+// first, because they live in package-level state that survives between runs
+// inside one test binary.
+func run(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	resetFlags(rootCmd)
+
+	var out bytes.Buffer
+	previousStdout := stdout
+	stdout = &out
+	t.Cleanup(func() { stdout = previousStdout })
+
+	rootCmd.SetOut(io.Discard)
+	rootCmd.SetErr(io.Discard)
+	rootCmd.SetArgs(args)
+
+	err := rootCmd.Execute()
+	return out.String(), err
+}
+
+func resetFlags(cmd *cobra.Command) {
+	reset := func(f *pflag.Flag) {
+		f.Changed = false
+		if slice, ok := f.Value.(pflag.SliceValue); ok {
+			_ = slice.Replace(nil)
+			return
+		}
+		_ = f.Value.Set(f.DefValue)
+	}
+
+	cmd.Flags().VisitAll(reset)
+	cmd.PersistentFlags().VisitAll(reset)
+	for _, sub := range cmd.Commands() {
+		resetFlags(sub)
+	}
+}
+
+// What the user types has to survive all the way to the request. A flag left
+// out is left out of the request; a flag set to false is sent as false.
+func TestFlagsReachTheRequest(t *testing.T) {
+	cases := []struct {
+		name       string
+		args       []string
+		wantMethod string
+		wantPath   string
+		wantParams url.Values
+	}{
+		{
+			name:       "no flags means no parameters",
+			args:       []string{"list-channels"},
+			wantMethod: "GET",
+			wantPath:   "/api/v1/streams",
+			wantParams: url.Values{},
+		},
+		{
+			name:       "false is sent, not dropped",
+			args:       []string{"list-channels", "--include-public=false"},
+			wantMethod: "GET",
+			wantPath:   "/api/v1/streams",
+			wantParams: url.Values{"include_public": {"false"}},
+		},
+		{
+			name:       "only what the user set is sent",
+			args:       []string{"list-channels", "--include-subscribed=false", "--include-public=true"},
+			wantMethod: "GET",
+			wantPath:   "/api/v1/streams",
+			wantParams: url.Values{"include_subscribed": {"false"}, "include_public": {"true"}},
+		},
+		{
+			name:       "false on a user flag",
+			args:       []string{"get-user", "7", "--include-custom-profile-fields=false"},
+			wantMethod: "GET",
+			wantPath:   "/api/v1/users/7",
+			wantParams: url.Values{"include_custom_profile_fields": {"false"}},
+		},
+		{
+			name:       "an empty description clears it",
+			args:       []string{"update-channel", "42", "--description", ""},
+			wantMethod: "PATCH",
+			wantPath:   "/api/v1/streams/42",
+			wantParams: url.Values{"description": {""}},
+		},
+		{
+			name:       "an empty topic is sent",
+			args:       []string{"update-message", "5", "--topic", ""},
+			wantMethod: "PATCH",
+			wantPath:   "/api/v1/messages/5",
+			wantParams: url.Values{"topic": {""}},
+		},
+		{
+			name:       "the retired --stream spelling still works",
+			args:       []string{"send-message", "--stream", "general", "--topic", "hi", "--content", "yo"},
+			wantMethod: "POST",
+			wantPath:   "/api/v1/messages",
+			wantParams: url.Values{
+				"type": {"stream"}, "to": {"general"}, "topic": {"hi"}, "content": {"yo"},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeZulip(t, `{"result":"success"}`)
+
+			if _, err := run(t, tc.args...); err != nil {
+				t.Fatalf("%v: %v", tc.args, err)
+			}
+
+			method, path, params, calls := fake.snapshot()
+			if calls != 1 {
+				t.Fatalf("made %d requests, want 1", calls)
+			}
+			if method != tc.wantMethod || path != tc.wantPath {
+				t.Errorf("%s %s, want %s %s", method, path, tc.wantMethod, tc.wantPath)
+			}
+			if !reflect.DeepEqual(params, tc.wantParams) {
+				t.Errorf("parameters = %v, want %v", params, tc.wantParams)
+			}
+		})
+	}
+}
+
+// A command that cannot do what was asked should say so before touching the
+// network, not send a request that means something else.
+func TestUsageErrorsHappenBeforeAnyRequest(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "listen cannot do both modes at once",
+			args: []string{"listen", "--messages-only", "--event-types", "reaction"},
+			want: "cannot be combined",
+		},
+		{
+			name: "update-channel needs something to change",
+			args: []string{"update-channel", "42"},
+			want: "either --description or --new-name",
+		},
+		{
+			name: "update-user-group needs something to change",
+			args: []string{"update-user-group", "3"},
+			want: "either --name or --description",
+		},
+		{
+			name: "update-message needs something to change",
+			args: []string{"update-message", "5"},
+			want: "either --content or --topic",
+		},
+		{
+			name: "send-message needs a recipient",
+			args: []string{"send-message", "--content", "hi"},
+			want: "either --channel or --to",
+		},
+		{
+			name: "channel messages need a topic",
+			args: []string{"send-message", "--channel", "general", "--content", "hi"},
+			want: "--topic is required",
+		},
+		{
+			name: "move-topic needs a destination",
+			args: []string{"move-topic", "42", "old"},
+			want: "either --new-channel-id or --new-topic",
+		},
+		{
+			name: "unsupported output formats are refused",
+			args: []string{"list-channels", "-o", "yaml"},
+			want: "unsupported output format",
+		},
+		{
+			name: "a negative timeout is refused",
+			args: []string{"list-channels", "--timeout", "-5s"},
+			want: "must not be negative",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeZulip(t, `{"result":"success"}`)
+
+			_, err := run(t, tc.args...)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want one mentioning %q", err, tc.want)
+			}
+			if _, _, _, calls := fake.snapshot(); calls != 0 {
+				t.Errorf("made %d requests, want none", calls)
+			}
+		})
+	}
+}
+
+func TestResultsArePrintedAsJSON(t *testing.T) {
+	newFakeZulip(t, `{"result":"success","streams":[{"stream_id":7,"name":"general"}]}`)
+
+	out, err := run(t, "list-channels")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got struct {
+		Result  string `json:"result"`
+		Streams []struct {
+			StreamID int    `json:"stream_id"`
+			Name     string `json:"name"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if len(got.Streams) != 1 || got.Streams[0].Name != "general" {
+		t.Errorf("got %+v, want the channel from the server", got)
+	}
+}
+
+// Commands that do not talk to a server must not require credentials, or a
+// connection, to run.
+func TestVersionNeedsNoClient(t *testing.T) {
+	previous := newClient
+	newClient = func() (*client.Client, error) {
+		t.Error("version built a client")
+		return nil, fmt.Errorf("no client available")
+	}
+	t.Cleanup(func() { newClient = previous })
+
+	out, err := run(t, "version")
+	if err != nil {
+		t.Fatalf("version failed: %v", err)
+	}
+
+	var build client.BuildInfo
+	if err := json.Unmarshal([]byte(out), &build); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if build.Version == "" || build.GoVersion == "" {
+		t.Errorf("got %+v, want a version and a toolchain", build)
+	}
+}
+
+// move-topic finds the topic's latest message before editing it, and the
+// retired --new-stream-id spelling still names the destination.
+func TestMoveTopicUsesTheLatestMessage(t *testing.T) {
+	fake := newFakeZulip(t, `{"result":"success","messages":[{"id":99}]}`)
+
+	if _, err := run(t, "move-topic", "42", "old", "--new-stream-id", "43"); err != nil {
+		t.Fatal(err)
+	}
+
+	method, path, params, calls := fake.snapshot()
+	if calls != 2 {
+		t.Fatalf("made %d requests, want a lookup and an edit", calls)
+	}
+	if method != "PATCH" || path != "/api/v1/messages/99" {
+		t.Errorf("%s %s, want PATCH /api/v1/messages/99", method, path)
+	}
+	want := url.Values{"stream_id": {"43"}, "propagate_mode": {"change_all"}}
+	if !reflect.DeepEqual(params, want) {
+		t.Errorf("parameters = %v, want %v", params, want)
+	}
+}

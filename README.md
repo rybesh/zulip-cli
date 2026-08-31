@@ -2,6 +2,8 @@
 
 **An [Intelligrit Labs](https://intelligrit.com#labs) Project**
 
+[![CI](https://github.com/rybesh/zulip-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/rybesh/zulip-cli/actions/workflows/ci.yml)
+
 <p align="center">
   <img src="logo.png" alt="zulip-cli logo" width="200">
 </p>
@@ -539,20 +541,30 @@ go build -o zulip-cli ./cmd/zulip-cli
 
 ### Testing
 
+The test suite needs no Zulip server: it runs the client and the commands
+against an `httptest` server and asserts on the requests they produce.
+
 ```bash
-# Set up test environment
+go test ./...
+go test -race ./...
+```
+
+To try the binary against a real server:
+
+```bash
 export ZULIP_URL=https://your-test-org.zulipchat.com
 export ZULIP_EMAIL=test-bot@example.com
 export ZULIP_API_KEY=your_test_api_key
 
-# Test basic commands
 ./zulip-cli server-settings
 ./zulip-cli get-profile
 ./zulip-cli list-channels
-
-# Run Go tests
-go test ./...
 ```
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs `gofmt -l .`, `go build ./...`, `go vet ./...`,
+and `go test -race ./...` on every push to `main` and on every pull request.
 
 ## API Coverage
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 )
 
 // SendMessageRequest represents a message send request

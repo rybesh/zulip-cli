@@ -3,7 +3,7 @@ package client
 import (
 	"encoding/json"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 )
 
 // GetStorageRequest represents a storage get request

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/intelligrit/zulip-cli/cmd/zulip-cli/commands"
+	"github.com/rybesh/zulip-cli/cmd/zulip-cli/commands"
 )
 
 func main() {

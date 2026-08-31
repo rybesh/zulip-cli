@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intelligrit/zulip-cli/client"
+	"github.com/rybesh/zulip-cli/client"
 	"github.com/spf13/cobra"
 )
 

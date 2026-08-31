@@ -1,4 +1,4 @@
-module github.com/intelligrit/zulip-cli
+module github.com/rybesh/zulip-cli
 
 go 1.23
 

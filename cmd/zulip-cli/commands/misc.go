@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 	"github.com/spf13/cobra"
 )
 

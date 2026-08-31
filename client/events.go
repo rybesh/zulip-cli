@@ -10,25 +10,25 @@ import (
 
 // RegisterRequest represents an event queue registration request
 type RegisterRequest struct {
-	EventTypes             []string         `json:"event_types,omitempty"`
-	Narrow                 [][]string       `json:"narrow,omitempty"`
-	AllPublicStreams       bool             `json:"all_public_streams,omitempty"`
-	IncludeSubscribers     bool             `json:"include_subscribers,omitempty"`
-	ClientGravatar         bool             `json:"client_gravatar,omitempty"`
-	SlimPresence           bool             `json:"slim_presence,omitempty"`
-	ApplyMarkdown          bool             `json:"apply_markdown,omitempty"`
-	ClientCapabilities     map[string]interface{} `json:"client_capabilities,omitempty"`
+	EventTypes         []string               `json:"event_types,omitempty"`
+	Narrow             [][]string             `json:"narrow,omitempty"`
+	AllPublicStreams   bool                   `json:"all_public_streams,omitempty"`
+	IncludeSubscribers bool                   `json:"include_subscribers,omitempty"`
+	ClientGravatar     bool                   `json:"client_gravatar,omitempty"`
+	SlimPresence       bool                   `json:"slim_presence,omitempty"`
+	ApplyMarkdown      bool                   `json:"apply_markdown,omitempty"`
+	ClientCapabilities map[string]interface{} `json:"client_capabilities,omitempty"`
 }
 
 // RegisterResponse represents event queue registration response
 type RegisterResponse struct {
 	types.Response
-	QueueID       string `json:"queue_id"`
-	LastEventID   int    `json:"last_event_id"`
-	ZulipVersion  string `json:"zulip_version"`
-	ZulipFeatureLevel int `json:"zulip_feature_level"`
-	ZulipMergeBase string `json:"zulip_merge_base,omitempty"`
-	MaxMessageID  int    `json:"max_message_id"`
+	QueueID           string `json:"queue_id"`
+	LastEventID       int    `json:"last_event_id"`
+	ZulipVersion      string `json:"zulip_version"`
+	ZulipFeatureLevel int    `json:"zulip_feature_level"`
+	ZulipMergeBase    string `json:"zulip_merge_base,omitempty"`
+	MaxMessageID      int    `json:"max_message_id"`
 }
 
 // Register registers an event queue

@@ -10,10 +10,10 @@ import (
 
 // GetStreamsRequest represents a request to list streams
 type GetStreamsRequest struct {
-	IncludePublic       bool `json:"include_public,omitempty"`
-	IncludeSubscribed   bool `json:"include_subscribed,omitempty"`
-	IncludeAllActive    bool `json:"include_all_active,omitempty"`
-	IncludeDefault      bool `json:"include_default,omitempty"`
+	IncludePublic          bool `json:"include_public,omitempty"`
+	IncludeSubscribed      bool `json:"include_subscribed,omitempty"`
+	IncludeAllActive       bool `json:"include_all_active,omitempty"`
+	IncludeDefault         bool `json:"include_default,omitempty"`
 	IncludeOwnerSubscribed bool `json:"include_owner_subscribed,omitempty"`
 }
 
@@ -83,22 +83,22 @@ type CreateStreamRequest struct {
 		Name        string `json:"name"`
 		Description string `json:"description,omitempty"`
 	} `json:"subscriptions"`
-	Principals             []interface{} `json:"principals,omitempty"` // Can be email strings or user IDs
-	AuthorizationErrorsFatal bool       `json:"authorization_errors_fatal,omitempty"`
-	Announce               bool          `json:"announce,omitempty"`
-	InviteOnly             bool          `json:"invite_only,omitempty"`
-	IsWebPublic            bool          `json:"is_web_public,omitempty"`
-	HistoryPublicToSubscribers bool      `json:"history_public_to_subscribers,omitempty"`
-	StreamPostPolicy       int           `json:"stream_post_policy,omitempty"`
-	MessageRetentionDays   interface{}   `json:"message_retention_days,omitempty"`
+	Principals                 []interface{} `json:"principals,omitempty"` // Can be email strings or user IDs
+	AuthorizationErrorsFatal   bool          `json:"authorization_errors_fatal,omitempty"`
+	Announce                   bool          `json:"announce,omitempty"`
+	InviteOnly                 bool          `json:"invite_only,omitempty"`
+	IsWebPublic                bool          `json:"is_web_public,omitempty"`
+	HistoryPublicToSubscribers bool          `json:"history_public_to_subscribers,omitempty"`
+	StreamPostPolicy           int           `json:"stream_post_policy,omitempty"`
+	MessageRetentionDays       interface{}   `json:"message_retention_days,omitempty"`
 }
 
 // CreateStreamResponse represents stream creation response
 type CreateStreamResponse struct {
 	types.Response
-	Subscribed map[string][]string `json:"subscribed,omitempty"`
+	Subscribed        map[string][]string `json:"subscribed,omitempty"`
 	AlreadySubscribed map[string][]string `json:"already_subscribed,omitempty"`
-	Unauthorized []string `json:"unauthorized,omitempty"`
+	Unauthorized      []string            `json:"unauthorized,omitempty"`
 }
 
 // CreateStream creates one or more streams
@@ -146,14 +146,14 @@ func (c *Client) CreateStream(req CreateStreamRequest) (*CreateStreamResponse, e
 
 // UpdateStreamRequest represents a stream update request
 type UpdateStreamRequest struct {
-	StreamID               int         `json:"stream_id"`
-	Description            string      `json:"description,omitempty"`
-	NewName                string      `json:"new_name,omitempty"`
-	IsPrivate              *bool       `json:"is_private,omitempty"`
-	IsWebPublic            *bool       `json:"is_web_public,omitempty"`
-	HistoryPublicToSubscribers *bool   `json:"history_public_to_subscribers,omitempty"`
-	StreamPostPolicy       int         `json:"stream_post_policy,omitempty"`
-	MessageRetentionDays   interface{} `json:"message_retention_days,omitempty"`
+	StreamID                   int         `json:"stream_id"`
+	Description                string      `json:"description,omitempty"`
+	NewName                    string      `json:"new_name,omitempty"`
+	IsPrivate                  *bool       `json:"is_private,omitempty"`
+	IsWebPublic                *bool       `json:"is_web_public,omitempty"`
+	HistoryPublicToSubscribers *bool       `json:"history_public_to_subscribers,omitempty"`
+	StreamPostPolicy           int         `json:"stream_post_policy,omitempty"`
+	MessageRetentionDays       interface{} `json:"message_retention_days,omitempty"`
 }
 
 // UpdateStream updates stream settings
@@ -309,13 +309,13 @@ type SubscribeRequest struct {
 		Name        string `json:"name"`
 		Description string `json:"description,omitempty"`
 	} `json:"subscriptions"`
-	Principals             []interface{} `json:"principals,omitempty"`
-	AuthorizationErrorsFatal bool       `json:"authorization_errors_fatal,omitempty"`
-	Announce               bool          `json:"announce,omitempty"`
-	InviteOnly             bool          `json:"invite_only,omitempty"`
-	HistoryPublicToSubscribers bool      `json:"history_public_to_subscribers,omitempty"`
-	StreamPostPolicy       int           `json:"stream_post_policy,omitempty"`
-	MessageRetentionDays   interface{}   `json:"message_retention_days,omitempty"`
+	Principals                 []interface{} `json:"principals,omitempty"`
+	AuthorizationErrorsFatal   bool          `json:"authorization_errors_fatal,omitempty"`
+	Announce                   bool          `json:"announce,omitempty"`
+	InviteOnly                 bool          `json:"invite_only,omitempty"`
+	HistoryPublicToSubscribers bool          `json:"history_public_to_subscribers,omitempty"`
+	StreamPostPolicy           int           `json:"stream_post_policy,omitempty"`
+	MessageRetentionDays       interface{}   `json:"message_retention_days,omitempty"`
 }
 
 // Subscribe subscribes users to streams
@@ -360,15 +360,15 @@ func (c *Client) Subscribe(req SubscribeRequest) (*CreateStreamResponse, error) 
 
 // UnsubscribeRequest represents an unsubscription request
 type UnsubscribeRequest struct {
-	Subscriptions []string      `json:"subscriptions"` // Stream names
+	Subscriptions []string      `json:"subscriptions"`        // Stream names
 	Principals    []interface{} `json:"principals,omitempty"` // User emails or IDs
 }
 
 // UnsubscribeResponse represents unsubscription response
 type UnsubscribeResponse struct {
 	types.Response
-	Removed      []string `json:"removed"`
-	NotRemoved   []string `json:"not_removed"`
+	Removed    []string `json:"removed"`
+	NotRemoved []string `json:"not_removed"`
 }
 
 // Unsubscribe unsubscribes users from streams
@@ -487,14 +487,14 @@ func (c *Client) AddDefaultStream(streamID int) (*types.Response, error) {
 
 // MoveTopicRequest represents a topic move request
 type MoveTopicRequest struct {
-	StreamID    int                      `json:"stream_id"`
-	NewStreamID int                      `json:"new_stream_id,omitempty"`
-	Topic       string                   `json:"topic"`
-	NewTopic    string                   `json:"new_topic,omitempty"`
-	MessageID   int                      `json:"message_id,omitempty"`
-	PropagateMode types.EditPropagateMode `json:"propagate_mode,omitempty"`
-	SendNotificationToOldThread bool     `json:"send_notification_to_old_thread,omitempty"`
-	SendNotificationToNewThread bool     `json:"send_notification_to_new_thread,omitempty"`
+	StreamID                    int                     `json:"stream_id"`
+	NewStreamID                 int                     `json:"new_stream_id,omitempty"`
+	Topic                       string                  `json:"topic"`
+	NewTopic                    string                  `json:"new_topic,omitempty"`
+	MessageID                   int                     `json:"message_id,omitempty"`
+	PropagateMode               types.EditPropagateMode `json:"propagate_mode,omitempty"`
+	SendNotificationToOldThread bool                    `json:"send_notification_to_old_thread,omitempty"`
+	SendNotificationToNewThread bool                    `json:"send_notification_to_new_thread,omitempty"`
 }
 
 // MoveTopic moves a topic to another stream and/or renames it

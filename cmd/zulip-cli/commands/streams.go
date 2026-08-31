@@ -9,8 +9,9 @@ import (
 )
 
 var listStreamsCmd = &cobra.Command{
-	Use:   "list-streams",
-	Short: "List all streams",
+	Use:     "list-channels",
+	Aliases: []string{"list-streams"},
+	Short:   "List all channels",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		includePublic, _ := cmd.Flags().GetBool("include-public")
 		includeSubscribed, _ := cmd.Flags().GetBool("include-subscribed")
@@ -32,9 +33,10 @@ var listStreamsCmd = &cobra.Command{
 }
 
 var getStreamCmd = &cobra.Command{
-	Use:   "get-stream [stream-name]",
-	Short: "Get stream ID by name",
-	Args:  cobra.ExactArgs(1),
+	Use:     "get-channel [channel-name]",
+	Aliases: []string{"get-stream"},
+	Short:   "Get channel ID by name",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		resp, err := zulipClient.GetStreamID(args[0])
 		if err != nil {
@@ -46,9 +48,10 @@ var getStreamCmd = &cobra.Command{
 }
 
 var createStreamCmd = &cobra.Command{
-	Use:   "create-stream [name]",
-	Short: "Create a new stream",
-	Args:  cobra.ExactArgs(1),
+	Use:     "create-channel [name]",
+	Aliases: []string{"create-stream"},
+	Short:   "Create a new channel",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
 		inviteOnly, _ := cmd.Flags().GetBool("invite-only")
@@ -75,9 +78,10 @@ var createStreamCmd = &cobra.Command{
 }
 
 var updateStreamCmd = &cobra.Command{
-	Use:   "update-stream [stream-id]",
-	Short: "Update a stream",
-	Args:  cobra.ExactArgs(1),
+	Use:     "update-channel [channel-id]",
+	Aliases: []string{"update-stream"},
+	Short:   "Update a channel",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
 		if err != nil {
@@ -103,9 +107,10 @@ var updateStreamCmd = &cobra.Command{
 }
 
 var deleteStreamCmd = &cobra.Command{
-	Use:   "delete-stream [stream-id]",
-	Short: "Delete a stream",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete-channel [channel-id]",
+	Aliases: []string{"delete-stream"},
+	Short:   "Delete a channel",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
 		if err != nil {
@@ -122,9 +127,10 @@ var deleteStreamCmd = &cobra.Command{
 }
 
 var listStreamTopicsCmd = &cobra.Command{
-	Use:   "list-stream-topics [stream-id]",
-	Short: "List all topics in a stream",
-	Args:  cobra.ExactArgs(1),
+	Use:     "list-channel-topics [channel-id]",
+	Aliases: []string{"list-stream-topics"},
+	Short:   "List all topics in a channel",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
 		if err != nil {
@@ -141,8 +147,8 @@ var listStreamTopicsCmd = &cobra.Command{
 }
 
 var subscribeCmd = &cobra.Command{
-	Use:   "subscribe [stream-names...]",
-	Short: "Subscribe to one or more streams",
+	Use:   "subscribe [channel-names...]",
+	Short: "Subscribe to one or more channels",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
@@ -173,8 +179,8 @@ var subscribeCmd = &cobra.Command{
 }
 
 var unsubscribeCmd = &cobra.Command{
-	Use:   "unsubscribe [stream-names...]",
-	Short: "Unsubscribe from one or more streams",
+	Use:   "unsubscribe [channel-names...]",
+	Short: "Unsubscribe from one or more channels",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := client.UnsubscribeRequest{
@@ -192,7 +198,7 @@ var unsubscribeCmd = &cobra.Command{
 
 var listSubscriptionsCmd = &cobra.Command{
 	Use:   "list-subscriptions",
-	Short: "List user's stream subscriptions",
+	Short: "List user's channel subscriptions",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		includeSubscribers, _ := cmd.Flags().GetBool("include-subscribers")
 
@@ -210,8 +216,8 @@ var listSubscriptionsCmd = &cobra.Command{
 }
 
 var listSubscribersCmd = &cobra.Command{
-	Use:   "list-subscribers [stream-id]",
-	Short: "List subscribers to a stream",
+	Use:   "list-subscribers [channel-id]",
+	Short: "List subscribers to a channel",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
@@ -229,7 +235,7 @@ var listSubscribersCmd = &cobra.Command{
 }
 
 var muteTopicCmd = &cobra.Command{
-	Use:   "mute-topic [stream] [topic]",
+	Use:   "mute-topic [channel] [topic]",
 	Short: "Mute a topic",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -249,7 +255,7 @@ var muteTopicCmd = &cobra.Command{
 }
 
 var unmuteTopicCmd = &cobra.Command{
-	Use:   "unmute-topic [stream] [topic]",
+	Use:   "unmute-topic [channel] [topic]",
 	Short: "Unmute a topic",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -269,8 +275,8 @@ var unmuteTopicCmd = &cobra.Command{
 }
 
 var moveTopicCmd = &cobra.Command{
-	Use:   "move-topic [stream-id] [topic]",
-	Short: "Move a topic to another stream or rename it",
+	Use:   "move-topic [channel-id] [topic]",
+	Short: "Move a topic to another channel or rename it",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
@@ -278,17 +284,17 @@ var moveTopicCmd = &cobra.Command{
 			return fmt.Errorf("invalid stream ID: %w", err)
 		}
 
-		newStreamID, _ := cmd.Flags().GetInt("new-stream-id")
+		newChannelID, _ := cmd.Flags().GetInt("new-channel-id")
 		newTopic, _ := cmd.Flags().GetString("new-topic")
 
-		if newStreamID == 0 && newTopic == "" {
-			return fmt.Errorf("either --new-stream-id or --new-topic is required")
+		if newChannelID == 0 && newTopic == "" {
+			return fmt.Errorf("either --new-channel-id or --new-topic is required")
 		}
 
 		req := client.MoveTopicRequest{
 			StreamID:    streamID,
 			Topic:       args[1],
-			NewStreamID: newStreamID,
+			NewStreamID: newChannelID,
 			NewTopic:    newTopic,
 		}
 
@@ -302,21 +308,21 @@ var moveTopicCmd = &cobra.Command{
 }
 
 func init() {
-	listStreamsCmd.Flags().Bool("include-public", true, "Include public streams")
-	listStreamsCmd.Flags().Bool("include-subscribed", false, "Include subscribed streams")
-	listStreamsCmd.Flags().Bool("include-all-active", false, "Include all active streams")
+	listStreamsCmd.Flags().Bool("include-public", true, "Include public channels")
+	listStreamsCmd.Flags().Bool("include-subscribed", false, "Include subscribed channels")
+	listStreamsCmd.Flags().Bool("include-all-active", false, "Include all active channels")
 
-	createStreamCmd.Flags().String("description", "", "Stream description")
-	createStreamCmd.Flags().Bool("invite-only", false, "Make stream private")
-	createStreamCmd.Flags().Bool("announce", false, "Announce stream creation")
+	createStreamCmd.Flags().String("description", "", "Channel description")
+	createStreamCmd.Flags().Bool("invite-only", false, "Make channel private")
+	createStreamCmd.Flags().Bool("announce", false, "Announce channel creation")
 
 	updateStreamCmd.Flags().String("description", "", "New description")
 	updateStreamCmd.Flags().String("new-name", "", "New name")
 
-	subscribeCmd.Flags().String("description", "", "Stream description (for new streams)")
+	subscribeCmd.Flags().String("description", "", "Channel description (for new channels)")
 
 	listSubscriptionsCmd.Flags().Bool("include-subscribers", false, "Include subscriber lists")
 
-	moveTopicCmd.Flags().Int("new-stream-id", 0, "New stream ID")
+	moveTopicCmd.Flags().Int("new-channel-id", 0, "New channel ID (formerly --new-stream-id)")
 	moveTopicCmd.Flags().String("new-topic", "", "New topic name")
 }

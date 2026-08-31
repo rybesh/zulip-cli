@@ -124,7 +124,7 @@ By default, listens for all message events.`,
 			return zulipClient.CallOnEachMessage(func(msg types.Message) {
 				fmt.Printf("\n[%s] %s: %s\n", msg.Type, msg.SenderFullName, msg.Content)
 				if msg.Type == "stream" {
-					fmt.Printf("  Stream: %v | Topic: %s\n", msg.DisplayRecipient, msg.Subject)
+					fmt.Printf("  Channel: %v | Topic: %s\n", msg.DisplayRecipient, msg.Subject)
 				}
 			})
 		}

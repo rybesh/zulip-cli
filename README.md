@@ -6,7 +6,7 @@
   <img src="logo.png" alt="zulip-cli logo" width="200">
 </p>
 
-A comprehensive command-line interface and Go library for the Zulip API. Provides complete scriptable access to messages, streams, users, and all Zulip features with full API coverage.
+A comprehensive command-line interface and Go library for the Zulip API. Provides complete scriptable access to messages, channels, users, and all Zulip features with full API coverage.
 
 ## Features
 
@@ -15,7 +15,7 @@ A comprehensive command-line interface and Go library for the Zulip API. Provide
 - ✅ **Real-time events** - Listen for messages and events as they happen
 - ✅ **Type-safe Go library** - Use in your own Go applications
 - ✅ **No config files** - Simple environment variable authentication
-- ✅ **Stream management** - Create, update, subscribe, manage topics
+- ✅ **Channel management** - Create, update, subscribe, manage topics
 - ✅ **Message operations** - Send, fetch, update, delete, reactions
 - ✅ **User management** - List, create, update, presence tracking
 - ✅ **File uploads** - Upload and manage attachments
@@ -59,17 +59,17 @@ export ZULIP_API_KEY=your_api_key_here
 ### Basic Usage
 
 ```bash
-# Send a message to a stream
-zulip-cli send-message --stream general --topic "Hello" --content "Hi everyone!"
+# Send a message to a channel
+zulip-cli send-message --channel general --topic "Hello" --content "Hi everyone!"
 
 # Send a direct message
 zulip-cli send-message --to user@example.com --content "Private message"
 
-# List all streams
-zulip-cli list-streams
+# List all channels
+zulip-cli list-channels
 
 # Get recent messages
-zulip-cli get-messages --stream general --num-before 10
+zulip-cli get-messages --channel general --num-before 10
 
 # Listen for new messages
 zulip-cli listen --messages-only
@@ -80,14 +80,14 @@ zulip-cli listen --messages-only
 ### Messages
 
 ```bash
-# Send a stream message
+# Send a channel message
 zulip-cli send-message -s general -t "Announcements" -c "Important update!"
 
 # Send a direct message to multiple users
 zulip-cli send-message --to alice@example.com,bob@example.com -c "Meeting at 3pm"
 
-# Get messages from a stream/topic
-zulip-cli get-messages --stream engineering --topic "deployments" --num-before 20
+# Get messages from a channel/topic
+zulip-cli get-messages --channel engineering --topic "deployments" --num-before 20
 
 # Update a message
 zulip-cli update-message 12345 --content "Updated text"
@@ -111,38 +111,43 @@ zulip-cli mark-all-as-read
 zulip-cli get-message-history 12345
 ```
 
-### Streams
+### Channels
+
+Zulip renamed **streams** to **channels** in version 9.0. This CLI uses the
+current name; every old `*-stream*` command and the `--stream` flag still work as
+aliases, so existing scripts keep running. Response JSON belongs to the server and
+is unchanged — keys such as `stream_id` and `streams` stay exactly as they are.
 
 ```bash
-# List all streams
-zulip-cli list-streams
+# List all channels
+zulip-cli list-channels
 
-# Get stream ID by name
-zulip-cli get-stream "general"
+# Get channel ID by name
+zulip-cli get-channel "general"
 
-# Create a stream
-zulip-cli create-stream engineering --description "Engineering discussions"
+# Create a channel
+zulip-cli create-channel engineering --description "Engineering discussions"
 
-# Update stream settings
-zulip-cli update-stream 42 --description "New description"
+# Update channel settings
+zulip-cli update-channel 42 --description "New description"
 
-# Delete a stream
-zulip-cli delete-stream 42
+# Delete a channel
+zulip-cli delete-channel 42
 
-# Subscribe to streams
+# Subscribe to channels
 zulip-cli subscribe engineering design product
 
-# Unsubscribe from streams
+# Unsubscribe from channels
 zulip-cli unsubscribe random
 
 # List your subscriptions
 zulip-cli list-subscriptions
 
 # Mute a topic
-zulip-cli mute-topic --stream general --topic "off-topic"
+zulip-cli mute-topic --channel general --topic "off-topic"
 
-# Move topic to another stream
-zulip-cli move-topic --stream-id 42 --new-stream-id 43 --topic "old-name"
+# Move topic to another channel
+zulip-cli move-topic --channel-id 42 --new-channel-id 43 --topic "old-name"
 ```
 
 ### Users
@@ -202,8 +207,8 @@ All commands output JSON by default, making zulip-cli perfect for scripting.
 ### Pretty Print
 
 ```bash
-# Pretty print all streams
-zulip-cli list-streams | jq
+# Pretty print all channels
+zulip-cli list-channels | jq
 
 # Pretty print with color
 zulip-cli list-users | jq -C
@@ -212,31 +217,31 @@ zulip-cli list-users | jq -C
 ### Extracting Data
 
 ```bash
-# Get just stream names
-zulip-cli list-streams | jq -r '.streams[].name'
+# Get just channel names
+zulip-cli list-channels | jq -r '.streams[].name'
 
 # Get email addresses of all users
 zulip-cli list-users | jq -r '.members[].email'
 
 # Extract message content
-zulip-cli get-messages --stream general --num-before 10 | jq -r '.messages[].content'
+zulip-cli get-messages --channel general --num-before 10 | jq -r '.messages[].content'
 
 # Count total messages
-zulip-cli get-messages --stream general --num-before 100 | jq '.messages | length'
+zulip-cli get-messages --channel general --num-before 100 | jq '.messages | length'
 ```
 
 ### Filtering with jq
 
 ```bash
-# Filter streams by name pattern
-zulip-cli list-streams | jq '.streams[] | select(.name | contains("eng"))'
+# Filter channels by name pattern
+zulip-cli list-channels | jq '.streams[] | select(.name | contains("eng"))'
 
 # Get messages from specific sender
-zulip-cli get-messages --stream general --num-before 50 | \
+zulip-cli get-messages --channel general --num-before 50 | \
   jq '.messages[] | select(.sender_full_name == "Alice")'
 
 # Find messages with reactions
-zulip-cli get-messages --stream general --num-before 100 | \
+zulip-cli get-messages --channel general --num-before 100 | \
   jq '.messages[] | select(.reactions | length > 0)'
 
 # List admin users
@@ -246,18 +251,18 @@ zulip-cli list-users | jq '.members[] | select(.is_admin == true) | .full_name'
 zulip-cli list-users | jq 'group_by(.is_bot) | map({bot: .[0].is_bot, count: length})'
 
 # Get topics with recent activity
-zulip-cli list-stream-topics 42 | jq '.topics | sort_by(.max_id) | reverse | .[0:5]'
+zulip-cli list-channel-topics 42 | jq '.topics | sort_by(.max_id) | reverse | .[0:5]'
 ```
 
 ### Format Conversions
 
 ```bash
 # Format messages as CSV
-zulip-cli get-messages --stream general --num-before 10 | \
+zulip-cli get-messages --channel general --num-before 10 | \
   jq -r '.messages[] | [.id, .sender_full_name, .subject, .content] | @csv'
 
-# Create a table of streams
-zulip-cli list-streams | \
+# Create a table of channels
+zulip-cli list-channels | \
   jq -r '.streams[] | "\(.stream_id)\t\(.name)\t\(.description)"' | column -t
 
 # Export to YAML
@@ -269,19 +274,19 @@ zulip-cli get-profile | yq -P
 **Send daily digest:**
 ```bash
 #!/bin/bash
-STREAM="general"
+CHANNEL="general"
 TOPIC="Daily Digest"
 DATE=$(date +%Y-%m-%d)
 
 # Get today's messages
-MESSAGES=$(zulip-cli get-messages --stream "$STREAM" --num-before 100 | \
+MESSAGES=$(zulip-cli get-messages --channel "$CHANNEL" --num-before 100 | \
   jq -r ".messages[] | select(.timestamp > $(date -d 'today' +%s)) | \
     \"- [\(.sender_full_name)]: \(.content)\""
 )
 
 # Send digest
 zulip-cli send-message \
-  --stream "$STREAM" \
+  --channel "$CHANNEL" \
   --topic "$TOPIC" \
   --content "**Digest for $DATE**\n\n$MESSAGES"
 ```
@@ -299,7 +304,7 @@ zulip-cli listen --messages-only | jq --unbuffered -r \
 **Bulk subscribe users:**
 ```bash
 #!/bin/bash
-STREAM="announcements"
+CHANNEL="announcements"
 
 # Get all active user emails
 USER_EMAILS=$(zulip-cli list-users | \
@@ -307,18 +312,18 @@ USER_EMAILS=$(zulip-cli list-users | \
 
 # Subscribe them all
 for email in $USER_EMAILS; do
-  echo "Subscribing $email to $STREAM"
-  zulip-cli subscribe "$STREAM" --principals "$email"
+  echo "Subscribing $email to $CHANNEL"
+  zulip-cli subscribe "$CHANNEL" --principals "$email"
 done
 ```
 
 **Generate message statistics:**
 ```bash
 #!/bin/bash
-STREAM="general"
-MESSAGES=$(zulip-cli get-messages --stream "$STREAM" --num-before 500)
+CHANNEL="general"
+MESSAGES=$(zulip-cli get-messages --channel "$CHANNEL" --num-before 500)
 
-echo "Message Statistics for #$STREAM"
+echo "Message Statistics for #$CHANNEL"
 echo "================================"
 echo -n "Total messages: "
 echo "$MESSAGES" | jq '.messages | length'
@@ -487,7 +492,7 @@ export ZULIP_API_KEY=your_test_api_key
 # Test basic commands
 ./zulip-cli server-settings
 ./zulip-cli get-profile
-./zulip-cli list-streams
+./zulip-cli list-channels
 
 # Run Go tests
 go test ./...
@@ -498,7 +503,7 @@ go test ./...
 The library provides complete coverage of the Zulip API including:
 
 - **Messages** - Send, fetch, update, delete, reactions, flags, rendering
-- **Streams** - Create, update, delete, subscribe, topics, email addresses
+- **Channels** - Create, update, delete, subscribe, topics, email addresses
 - **Users** - List, create, update, deactivate, presence, alert words
 - **User Groups** - Create, update, delete, manage members
 - **Emoji** - List, upload, delete custom emoji

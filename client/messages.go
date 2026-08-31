@@ -10,12 +10,12 @@ import (
 
 // SendMessageRequest represents a message send request
 type SendMessageRequest struct {
-	Type    string   `json:"type"`              // "stream" or "private"
-	To      interface{} `json:"to"`             // string for stream, []string or []int for private
-	Content string   `json:"content"`
-	Topic   string   `json:"topic,omitempty"`   // For stream messages (also accepts "subject")
-	QueueID string   `json:"queue_id,omitempty"`
-	LocalID string   `json:"local_id,omitempty"`
+	Type    string      `json:"type"` // "stream" or "private"
+	To      interface{} `json:"to"`   // string for stream, []string or []int for private
+	Content string      `json:"content"`
+	Topic   string      `json:"topic,omitempty"` // For stream messages (also accepts "subject")
+	QueueID string      `json:"queue_id,omitempty"`
+	LocalID string      `json:"local_id,omitempty"`
 }
 
 // SendMessageResponse represents the response from sending a message
@@ -70,24 +70,24 @@ func (c *Client) SendMessage(req SendMessageRequest) (*SendMessageResponse, erro
 
 // GetMessagesRequest represents a request to fetch messages
 type GetMessagesRequest struct {
-	Anchor          interface{}    `json:"anchor"`           // "newest", "oldest", "first_unread", or message ID
-	NumBefore       int            `json:"num_before"`
-	NumAfter        int            `json:"num_after"`
-	Narrow          []types.Narrow `json:"narrow,omitempty"`
-	ClientGravatar  bool           `json:"client_gravatar,omitempty"`
-	ApplyMarkdown   bool           `json:"apply_markdown,omitempty"`
-	UseFirstUnreadAnchor bool      `json:"use_first_unread_anchor,omitempty"`
+	Anchor               interface{}    `json:"anchor"` // "newest", "oldest", "first_unread", or message ID
+	NumBefore            int            `json:"num_before"`
+	NumAfter             int            `json:"num_after"`
+	Narrow               []types.Narrow `json:"narrow,omitempty"`
+	ClientGravatar       bool           `json:"client_gravatar,omitempty"`
+	ApplyMarkdown        bool           `json:"apply_markdown,omitempty"`
+	UseFirstUnreadAnchor bool           `json:"use_first_unread_anchor,omitempty"`
 }
 
 // GetMessagesResponse represents messages response
 type GetMessagesResponse struct {
 	types.Response
-	Anchor         int              `json:"anchor"`
-	FoundNewest    bool             `json:"found_newest"`
-	FoundOldest    bool             `json:"found_oldest"`
-	FoundAnchor    bool             `json:"found_anchor"`
-	HistoryLimited bool             `json:"history_limited"`
-	Messages       []types.Message  `json:"messages"`
+	Anchor         int             `json:"anchor"`
+	FoundNewest    bool            `json:"found_newest"`
+	FoundOldest    bool            `json:"found_oldest"`
+	FoundAnchor    bool            `json:"found_anchor"`
+	HistoryLimited bool            `json:"history_limited"`
+	Messages       []types.Message `json:"messages"`
 }
 
 // GetMessages retrieves messages
@@ -147,13 +147,13 @@ func (c *Client) GetRawMessage(messageID int) (*GetRawMessageResponse, error) {
 
 // UpdateMessageRequest represents a message update request
 type UpdateMessageRequest struct {
-	MessageID      int                      `json:"message_id"`
-	Content        string                   `json:"content,omitempty"`
-	Topic          string                   `json:"topic,omitempty"`
-	PropagateMode  types.EditPropagateMode  `json:"propagate_mode,omitempty"`
-	SendNotificationToOldThread bool        `json:"send_notification_to_old_thread,omitempty"`
-	SendNotificationToNewThread bool        `json:"send_notification_to_new_thread,omitempty"`
-	StreamID       int                      `json:"stream_id,omitempty"`
+	MessageID                   int                     `json:"message_id"`
+	Content                     string                  `json:"content,omitempty"`
+	Topic                       string                  `json:"topic,omitempty"`
+	PropagateMode               types.EditPropagateMode `json:"propagate_mode,omitempty"`
+	SendNotificationToOldThread bool                    `json:"send_notification_to_old_thread,omitempty"`
+	SendNotificationToNewThread bool                    `json:"send_notification_to_new_thread,omitempty"`
+	StreamID                    int                     `json:"stream_id,omitempty"`
 }
 
 // UpdateMessage updates a message
@@ -211,17 +211,17 @@ func (c *Client) DeleteMessage(messageID int) (*types.Response, error) {
 type GetMessageHistoryResponse struct {
 	types.Response
 	MessageHistory []struct {
-		UserID            int    `json:"user_id"`
-		Timestamp         int64  `json:"timestamp"`
-		PrevContent       string `json:"prev_content,omitempty"`
+		UserID              int    `json:"user_id"`
+		Timestamp           int64  `json:"timestamp"`
+		PrevContent         string `json:"prev_content,omitempty"`
 		PrevRenderedContent string `json:"prev_rendered_content,omitempty"`
-		Content           string `json:"content,omitempty"`
-		RenderedContent   string `json:"rendered_content,omitempty"`
-		ContentHTMLDiff   string `json:"content_html_diff,omitempty"`
-		PrevTopic         string `json:"prev_topic,omitempty"`
-		Topic             string `json:"topic,omitempty"`
-		PrevStream        int    `json:"prev_stream,omitempty"`
-		Stream            int    `json:"stream,omitempty"`
+		Content             string `json:"content,omitempty"`
+		RenderedContent     string `json:"rendered_content,omitempty"`
+		ContentHTMLDiff     string `json:"content_html_diff,omitempty"`
+		PrevTopic           string `json:"prev_topic,omitempty"`
+		Topic               string `json:"topic,omitempty"`
+		PrevStream          int    `json:"prev_stream,omitempty"`
+		Stream              int    `json:"stream,omitempty"`
 	} `json:"message_history"`
 }
 
@@ -242,9 +242,9 @@ func (c *Client) GetMessageHistory(messageID int) (*GetMessageHistoryResponse, e
 
 // UpdateMessageFlagsRequest represents a message flags update request
 type UpdateMessageFlagsRequest struct {
-	Messages []int              `json:"messages"`
-	Op       string             `json:"op"` // "add" or "remove"
-	Flag     types.MessageFlag  `json:"flag"`
+	Messages []int             `json:"messages"`
+	Op       string            `json:"op"` // "add" or "remove"
+	Flag     types.MessageFlag `json:"flag"`
 }
 
 // UpdateMessageFlags adds or removes flags on messages
@@ -324,9 +324,9 @@ func (c *Client) MarkTopicAsRead(streamID int, topicName string) (*types.Respons
 
 // AddReactionRequest represents adding a reaction
 type AddReactionRequest struct {
-	MessageID    int           `json:"message_id"`
-	EmojiName    string        `json:"emoji_name"`
-	EmojiCode    string        `json:"emoji_code,omitempty"`
+	MessageID    int             `json:"message_id"`
+	EmojiName    string          `json:"emoji_name"`
+	EmojiCode    string          `json:"emoji_code,omitempty"`
 	ReactionType types.EmojiType `json:"reaction_type,omitempty"`
 }
 

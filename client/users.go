@@ -9,7 +9,7 @@ import (
 
 // GetUsersRequest represents a users list request
 type GetUsersRequest struct {
-	ClientGravatar   bool `json:"client_gravatar,omitempty"`
+	ClientGravatar             bool `json:"client_gravatar,omitempty"`
 	IncludeCustomProfileFields bool `json:"include_custom_profile_fields,omitempty"`
 }
 
@@ -71,17 +71,17 @@ func (c *Client) GetUser(userID int, includeCustomProfileFields bool) (*GetUserR
 // GetProfileResponse represents the current user's profile
 type GetProfileResponse struct {
 	types.Response
-	UserID       int                    `json:"user_id"`
-	Email        string                 `json:"email"`
-	FullName     string                 `json:"full_name"`
-	IsAdmin      bool                   `json:"is_admin"`
-	IsOwner      bool                   `json:"is_owner"`
-	IsGuest      bool                   `json:"is_guest"`
-	IsBillingAdmin bool                 `json:"is_billing_admin"`
-	IsBot        bool                   `json:"is_bot"`
-	AvatarURL    string                 `json:"avatar_url"`
-	Timezone     string                 `json:"timezone"`
-	ProfileData  map[string]interface{} `json:"profile_data,omitempty"`
+	UserID         int                    `json:"user_id"`
+	Email          string                 `json:"email"`
+	FullName       string                 `json:"full_name"`
+	IsAdmin        bool                   `json:"is_admin"`
+	IsOwner        bool                   `json:"is_owner"`
+	IsGuest        bool                   `json:"is_guest"`
+	IsBillingAdmin bool                   `json:"is_billing_admin"`
+	IsBot          bool                   `json:"is_bot"`
+	AvatarURL      string                 `json:"avatar_url"`
+	Timezone       string                 `json:"timezone"`
+	ProfileData    map[string]interface{} `json:"profile_data,omitempty"`
 }
 
 // GetProfile retrieves the current user's profile
@@ -137,9 +137,9 @@ func (c *Client) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) 
 
 // UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
-	UserID     int                    `json:"user_id"`
-	FullName   string                 `json:"full_name,omitempty"`
-	Role       int                    `json:"role,omitempty"`
+	UserID      int                    `json:"user_id"`
+	FullName    string                 `json:"full_name,omitempty"`
+	Role        int                    `json:"role,omitempty"`
 	ProfileData map[string]interface{} `json:"profile_data,omitempty"`
 }
 
@@ -253,9 +253,9 @@ func (c *Client) GetRealmPresence() (*GetRealmPresenceResponse, error) {
 
 // UpdatePresenceRequest represents a presence update request
 type UpdatePresenceRequest struct {
-	Status        string `json:"status"` // "active" or "idle"
-	PingOnly      bool   `json:"ping_only,omitempty"`
-	NewUserInput  bool   `json:"new_user_input,omitempty"`
+	Status       string `json:"status"` // "active" or "idle"
+	PingOnly     bool   `json:"ping_only,omitempty"`
+	NewUserInput bool   `json:"new_user_input,omitempty"`
 }
 
 // UpdatePresenceResponse represents presence update response
@@ -363,11 +363,11 @@ func (c *Client) RemoveAlertWords(words []string) (*RemoveAlertWordsResponse, er
 
 // SetTypingStatusRequest represents a typing status request
 type SetTypingStatusRequest struct {
-	Op     string        `json:"op"` // "start" or "stop"
-	To     []int         `json:"to,omitempty"` // User IDs for private messages
-	Type   string        `json:"type,omitempty"` // "stream" or "private"
-	Topic  string        `json:"topic,omitempty"` // For stream messages
-	StreamID int         `json:"stream_id,omitempty"` // For stream messages
+	Op       string `json:"op"`                  // "start" or "stop"
+	To       []int  `json:"to,omitempty"`        // User IDs for private messages
+	Type     string `json:"type,omitempty"`      // "stream" or "private"
+	Topic    string `json:"topic,omitempty"`     // For stream messages
+	StreamID int    `json:"stream_id,omitempty"` // For stream messages
 }
 
 // SetTypingStatus sets typing status

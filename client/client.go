@@ -40,6 +40,19 @@ type Client struct {
 	// Timeout bounds a single request. Zero means DefaultTimeout; a negative
 	// value means no timeout at all.
 	Timeout time.Duration
+	// Warnf receives warnings about requests that otherwise succeeded, such as
+	// parameters the server ignored. Nil writes them to stderr; set it to a
+	// no-op to silence them.
+	Warnf func(format string, args ...interface{})
+}
+
+// warnf reports a problem that did not fail the request.
+func (c *Client) warnf(format string, args ...interface{}) {
+	if c.Warnf != nil {
+		c.Warnf(format, args...)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "warning: "+format+"\n", args...)
 }
 
 // Config holds configuration for creating a new client
@@ -374,6 +387,18 @@ func (c *Client) doRequestContext(ctx context.Context, timeout time.Duration, me
 			apiErr.Code = errResp.Code
 		}
 		return body, apiErr
+	}
+
+	// Zulip accepts parameters it does not recognize and names them in the
+	// success response. Surfacing that keeps a renamed or removed parameter
+	// from failing invisibly. The cheap substring check keeps large responses
+	// from being parsed twice for nothing.
+	if bytes.Contains(body, []byte("ignored_parameters_unsupported")) {
+		var meta types.Response
+		if err := json.Unmarshal(body, &meta); err == nil && len(meta.IgnoredParameters) > 0 {
+			c.warnf("server ignored unsupported parameters on %s: %s",
+				endpoint, strings.Join(meta.IgnoredParameters, ", "))
+		}
 	}
 
 	return body, nil

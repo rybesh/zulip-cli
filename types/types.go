@@ -7,6 +7,10 @@ type Response struct {
 	Result string `json:"result"`
 	Msg    string `json:"msg"`
 	Code   string `json:"code,omitempty"`
+	// IgnoredParameters lists parameters the server did not recognize. Zulip
+	// accepts such a request and reports the parameters here, so a non-empty
+	// value means part of what was asked for had no effect.
+	IgnoredParameters []string `json:"ignored_parameters_unsupported,omitempty"`
 }
 
 // EditPropagateMode specifies how message updates should propagate

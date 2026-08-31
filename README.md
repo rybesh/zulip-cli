@@ -98,7 +98,13 @@ silently getting JSON.
 Boolean flags are only sent when you pass them, so leaving one out means "use
 the server's default" and passing `--flag=false` really does turn the setting
 off. String flags work the same way: `--description ""` clears a description,
-while omitting `--description` leaves it alone.
+while omitting `--description` leaves it alone. Flag defaults shown in `--help`
+match what the server does when the flag is absent.
+
+Zulip accepts parameters it does not recognize and names them in the response.
+When that happens, zulip-cli prints a warning on stderr and the JSON carries an
+`ignored_parameters_unsupported` field, so a parameter your server version has
+dropped fails loudly instead of silently doing nothing.
 
 ### Messages
 

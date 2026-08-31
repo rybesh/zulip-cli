@@ -304,9 +304,11 @@ var moveTopicCmd = &cobra.Command{
 }
 
 func init() {
+	// Defaults match the server's, since an unset flag is left out of the
+	// request; pass --include-public=false to actually exclude them.
 	listStreamsCmd.Flags().Bool("include-public", true, "Include public channels")
-	listStreamsCmd.Flags().Bool("include-subscribed", false, "Include subscribed channels")
-	listStreamsCmd.Flags().Bool("include-all-active", false, "Include all active channels")
+	listStreamsCmd.Flags().Bool("include-subscribed", true, "Include subscribed channels")
+	listStreamsCmd.Flags().Bool("include-all-active", false, "Include all active channels (admins only)")
 
 	createStreamCmd.Flags().String("description", "", "Channel description")
 	createStreamCmd.Flags().Bool("invite-only", false, "Make channel private")

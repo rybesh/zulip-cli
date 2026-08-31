@@ -13,9 +13,9 @@ import (
 var sendMessageCmd = &cobra.Command{
 	Use:   "send-message",
 	Short: "Send a message",
-	Long:  `Send a message to a stream or as a direct message`,
+	Long:  `Send a message to a channel or as a direct message`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		stream, _ := cmd.Flags().GetString("stream")
+		channel, _ := cmd.Flags().GetString("channel")
 		topic, _ := cmd.Flags().GetString("topic")
 		to, _ := cmd.Flags().GetStringSlice("to")
 		content, _ := cmd.Flags().GetString("content")
@@ -25,13 +25,14 @@ var sendMessageCmd = &cobra.Command{
 		}
 
 		var req client.SendMessageRequest
-		if stream != "" {
+		if channel != "" {
 			if topic == "" {
-				return fmt.Errorf("--topic is required for stream messages")
+				return fmt.Errorf("--topic is required for channel messages")
 			}
 			req = client.SendMessageRequest{
+				// "stream" is the wire value; the server has not renamed it.
 				Type:    "stream",
-				To:      stream,
+				To:      channel,
 				Topic:   topic,
 				Content: content,
 			}
@@ -42,7 +43,7 @@ var sendMessageCmd = &cobra.Command{
 				Content: content,
 			}
 		} else {
-			return fmt.Errorf("either --stream or --to is required")
+			return fmt.Errorf("either --channel or --to is required")
 		}
 
 		resp, err := zulipClient.SendMessage(req)
@@ -62,7 +63,7 @@ var getMessagesCmd = &cobra.Command{
 		anchor, _ := cmd.Flags().GetString("anchor")
 		numBefore, _ := cmd.Flags().GetInt("num-before")
 		numAfter, _ := cmd.Flags().GetInt("num-after")
-		stream, _ := cmd.Flags().GetString("stream")
+		channel, _ := cmd.Flags().GetString("channel")
 		topic, _ := cmd.Flags().GetString("topic")
 
 		req := client.GetMessagesRequest{
@@ -73,8 +74,9 @@ var getMessagesCmd = &cobra.Command{
 
 		// Build narrow
 		var narrow []types.Narrow
-		if stream != "" {
-			narrow = append(narrow, types.Narrow{Operator: "stream", Operand: stream})
+		if channel != "" {
+			// "stream" is the wire operator; the server has not renamed it.
+			narrow = append(narrow, types.Narrow{Operator: "stream", Operand: channel})
 		}
 		if topic != "" {
 			narrow = append(narrow, types.Narrow{Operator: "topic", Operand: topic})
@@ -224,9 +226,10 @@ var markAllAsReadCmd = &cobra.Command{
 }
 
 var markStreamAsReadCmd = &cobra.Command{
-	Use:   "mark-stream-as-read [stream-id]",
-	Short: "Mark all messages in a stream as read",
-	Args:  cobra.ExactArgs(1),
+	Use:     "mark-channel-as-read [channel-id]",
+	Aliases: []string{"mark-stream-as-read"},
+	Short:   "Mark all messages in a channel as read",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
 		if err != nil {
@@ -243,7 +246,7 @@ var markStreamAsReadCmd = &cobra.Command{
 }
 
 var markTopicAsReadCmd = &cobra.Command{
-	Use:   "mark-topic-as-read [stream-id] [topic]",
+	Use:   "mark-topic-as-read [channel-id] [topic]",
 	Short: "Mark all messages in a topic as read",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -281,15 +284,15 @@ var getMessageHistoryCmd = &cobra.Command{
 }
 
 func init() {
-	sendMessageCmd.Flags().StringP("stream", "s", "", "Stream name")
-	sendMessageCmd.Flags().StringP("topic", "t", "", "Topic name (required for stream messages)")
+	sendMessageCmd.Flags().StringP("channel", "s", "", "Channel name (formerly stream)")
+	sendMessageCmd.Flags().StringP("topic", "t", "", "Topic name (required for channel messages)")
 	sendMessageCmd.Flags().StringSliceP("to", "u", nil, "Recipients for direct message (comma-separated)")
 	sendMessageCmd.Flags().StringP("content", "c", "", "Message content (required)")
 
 	getMessagesCmd.Flags().String("anchor", "newest", "Anchor (newest, oldest, first_unread, or message ID)")
 	getMessagesCmd.Flags().Int("num-before", 100, "Number of messages before anchor")
 	getMessagesCmd.Flags().Int("num-after", 0, "Number of messages after anchor")
-	getMessagesCmd.Flags().StringP("stream", "s", "", "Filter by stream")
+	getMessagesCmd.Flags().StringP("channel", "s", "", "Filter by channel (formerly stream)")
 	getMessagesCmd.Flags().StringP("topic", "t", "", "Filter by topic")
 
 	updateMessageCmd.Flags().StringP("content", "c", "", "New message content")

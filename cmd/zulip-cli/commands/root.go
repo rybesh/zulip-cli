@@ -7,7 +7,26 @@ import (
 
 	"github.com/rybesh/zulip-cli/client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
+
+// retiredFlagNames maps flag spellings this CLI no longer advertises to their
+// current names. Zulip renamed streams to channels in version 9.0; the old
+// spellings keep working so existing scripts do not break.
+var retiredFlagNames = map[string]string{
+	"stream":        "channel",
+	"new-stream-id": "new-channel-id",
+}
+
+// normalizeFlagName lets a retired flag spelling resolve to its current flag.
+// Unlike defining a second flag, this keeps one flag with one value, so
+// --stream and --channel cannot disagree.
+func normalizeFlagName(f *pflag.FlagSet, name string) pflag.NormalizedName {
+	if current, ok := retiredFlagNames[name]; ok {
+		name = current
+	}
+	return pflag.NormalizedName(name)
+}
 
 var (
 	// Global client instance
@@ -24,7 +43,7 @@ var rootCmd = &cobra.Command{
 	Short: "A comprehensive CLI for Zulip",
 	Long: `zulip-cli is a command-line interface for interacting with Zulip.
 It provides full access to the Zulip API, allowing you to send messages,
-manage streams, users, and more.
+manage channels, users, and more.
 
 Authentication is done via environment variables:
   - ZULIP_URL: Your Zulip server URL
@@ -35,7 +54,10 @@ Example:
   export ZULIP_URL=https://your-org.zulipchat.com
   export ZULIP_EMAIL=bot@example.com
   export ZULIP_API_KEY=your_api_key_here
-  zulip-cli send-message --stream general --topic "Hello" --content "Hi there!"`,
+  zulip-cli send-message --channel general --topic "Hello" --content "Hi there!"
+
+Zulip renamed streams to channels in version 9.0. This CLI follows that
+naming; the older stream spellings still work as aliases.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// These commands do not talk to a Zulip server, so they must not
 		// require credentials or pay the cost of connecting.
@@ -128,6 +150,9 @@ func init() {
 	rootCmd.AddCommand(listenCmd)
 
 	rootCmd.AddCommand(versionCmd)
+
+	// Must follow AddCommand: this propagates to the commands registered above.
+	rootCmd.SetGlobalNormalizationFunc(normalizeFlagName)
 }
 
 // printJSON prints data as JSON

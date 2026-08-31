@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/rybesh/zulip-cli/types"
 )
@@ -29,10 +30,12 @@ func (c *Client) GetRealmEmoji() (*GetRealmEmojiResponse, error) {
 	return &resp, nil
 }
 
-// UploadCustomEmoji uploads a custom emoji
-func (c *Client) UploadCustomEmoji(emojiName string, file io.Reader) (*types.Response, error) {
-	files := map[string]io.Reader{
-		emojiName: file,
+// UploadCustomEmoji uploads a custom emoji. filename names the local file, and
+// only its base name is sent, so the server sees the image's real name and
+// extension rather than a path.
+func (c *Client) UploadCustomEmoji(emojiName, filename string, file io.Reader) (*types.Response, error) {
+	files := map[string]FormFile{
+		"file": {Filename: filepath.Base(filename), Reader: file},
 	}
 
 	body, err := c.PostWithFiles(fmt.Sprintf("realm/emoji/%s", emojiName), nil, files)

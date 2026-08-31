@@ -8,13 +8,17 @@ import (
 	"github.com/rybesh/zulip-cli/types"
 )
 
-// GetStreamsRequest represents a request to list streams
+// GetStreamsRequest represents a request to list streams.
+//
+// Optional flags throughout this package are pointers: a nil field is left out
+// of the request so the server's default applies, while a non-nil false is sent
+// as false rather than silently dropped.
 type GetStreamsRequest struct {
-	IncludePublic          bool `json:"include_public,omitempty"`
-	IncludeSubscribed      bool `json:"include_subscribed,omitempty"`
-	IncludeAllActive       bool `json:"include_all_active,omitempty"`
-	IncludeDefault         bool `json:"include_default,omitempty"`
-	IncludeOwnerSubscribed bool `json:"include_owner_subscribed,omitempty"`
+	IncludePublic          *bool `json:"include_public,omitempty"`
+	IncludeSubscribed      *bool `json:"include_subscribed,omitempty"`
+	IncludeAllActive       *bool `json:"include_all_active,omitempty"`
+	IncludeDefault         *bool `json:"include_default,omitempty"`
+	IncludeOwnerSubscribed *bool `json:"include_owner_subscribed,omitempty"`
 }
 
 // GetStreamsResponse represents streams list response
@@ -26,20 +30,20 @@ type GetStreamsResponse struct {
 // GetStreams retrieves all streams
 func (c *Client) GetStreams(req GetStreamsRequest) (*GetStreamsResponse, error) {
 	params := map[string]interface{}{}
-	if req.IncludePublic {
-		params["include_public"] = true
+	if req.IncludePublic != nil {
+		params["include_public"] = *req.IncludePublic
 	}
-	if req.IncludeSubscribed {
-		params["include_subscribed"] = true
+	if req.IncludeSubscribed != nil {
+		params["include_subscribed"] = *req.IncludeSubscribed
 	}
-	if req.IncludeAllActive {
-		params["include_all_active"] = true
+	if req.IncludeAllActive != nil {
+		params["include_all_active"] = *req.IncludeAllActive
 	}
-	if req.IncludeDefault {
-		params["include_default"] = true
+	if req.IncludeDefault != nil {
+		params["include_default"] = *req.IncludeDefault
 	}
-	if req.IncludeOwnerSubscribed {
-		params["include_owner_subscribed"] = true
+	if req.IncludeOwnerSubscribed != nil {
+		params["include_owner_subscribed"] = *req.IncludeOwnerSubscribed
 	}
 
 	body, err := c.Get("streams", params)
@@ -84,11 +88,11 @@ type CreateStreamRequest struct {
 		Description string `json:"description,omitempty"`
 	} `json:"subscriptions"`
 	Principals                 []interface{} `json:"principals,omitempty"` // Can be email strings or user IDs
-	AuthorizationErrorsFatal   bool          `json:"authorization_errors_fatal,omitempty"`
-	Announce                   bool          `json:"announce,omitempty"`
-	InviteOnly                 bool          `json:"invite_only,omitempty"`
-	IsWebPublic                bool          `json:"is_web_public,omitempty"`
-	HistoryPublicToSubscribers bool          `json:"history_public_to_subscribers,omitempty"`
+	AuthorizationErrorsFatal   *bool         `json:"authorization_errors_fatal,omitempty"`
+	Announce                   *bool         `json:"announce,omitempty"`
+	InviteOnly                 *bool         `json:"invite_only,omitempty"`
+	IsWebPublic                *bool         `json:"is_web_public,omitempty"`
+	HistoryPublicToSubscribers *bool         `json:"history_public_to_subscribers,omitempty"`
 	StreamPostPolicy           int           `json:"stream_post_policy,omitempty"`
 	MessageRetentionDays       interface{}   `json:"message_retention_days,omitempty"`
 }
@@ -109,20 +113,20 @@ func (c *Client) CreateStream(req CreateStreamRequest) (*CreateStreamResponse, e
 	if len(req.Principals) > 0 {
 		params["principals"] = req.Principals
 	}
-	if req.AuthorizationErrorsFatal {
-		params["authorization_errors_fatal"] = true
+	if req.AuthorizationErrorsFatal != nil {
+		params["authorization_errors_fatal"] = *req.AuthorizationErrorsFatal
 	}
-	if req.Announce {
-		params["announce"] = true
+	if req.Announce != nil {
+		params["announce"] = *req.Announce
 	}
-	if req.InviteOnly {
-		params["invite_only"] = true
+	if req.InviteOnly != nil {
+		params["invite_only"] = *req.InviteOnly
 	}
-	if req.IsWebPublic {
-		params["is_web_public"] = true
+	if req.IsWebPublic != nil {
+		params["is_web_public"] = *req.IsWebPublic
 	}
-	if req.HistoryPublicToSubscribers {
-		params["history_public_to_subscribers"] = true
+	if req.HistoryPublicToSubscribers != nil {
+		params["history_public_to_subscribers"] = *req.HistoryPublicToSubscribers
 	}
 	if req.StreamPostPolicy > 0 {
 		params["stream_post_policy"] = req.StreamPostPolicy
@@ -147,8 +151,8 @@ func (c *Client) CreateStream(req CreateStreamRequest) (*CreateStreamResponse, e
 // UpdateStreamRequest represents a stream update request
 type UpdateStreamRequest struct {
 	StreamID                   int         `json:"stream_id"`
-	Description                string      `json:"description,omitempty"`
-	NewName                    string      `json:"new_name,omitempty"`
+	Description                *string     `json:"description,omitempty"`
+	NewName                    *string     `json:"new_name,omitempty"`
 	IsPrivate                  *bool       `json:"is_private,omitempty"`
 	IsWebPublic                *bool       `json:"is_web_public,omitempty"`
 	HistoryPublicToSubscribers *bool       `json:"history_public_to_subscribers,omitempty"`
@@ -159,11 +163,11 @@ type UpdateStreamRequest struct {
 // UpdateStream updates stream settings
 func (c *Client) UpdateStream(req UpdateStreamRequest) (*types.Response, error) {
 	params := map[string]interface{}{}
-	if req.Description != "" {
-		params["description"] = req.Description
+	if req.Description != nil {
+		params["description"] = *req.Description
 	}
-	if req.NewName != "" {
-		params["new_name"] = req.NewName
+	if req.NewName != nil {
+		params["new_name"] = *req.NewName
 	}
 	if req.IsPrivate != nil {
 		params["is_private"] = *req.IsPrivate
@@ -274,7 +278,7 @@ func (c *Client) GetSubscribers(streamID int) (*GetSubscribersResponse, error) {
 
 // GetSubscriptionsRequest represents subscriptions list request
 type GetSubscriptionsRequest struct {
-	IncludeSubscribers bool `json:"include_subscribers,omitempty"`
+	IncludeSubscribers *bool `json:"include_subscribers,omitempty"`
 }
 
 // GetSubscriptionsResponse represents user subscriptions response
@@ -286,8 +290,8 @@ type GetSubscriptionsResponse struct {
 // GetSubscriptions gets all streams the user is subscribed to
 func (c *Client) GetSubscriptions(req GetSubscriptionsRequest) (*GetSubscriptionsResponse, error) {
 	params := map[string]interface{}{}
-	if req.IncludeSubscribers {
-		params["include_subscribers"] = true
+	if req.IncludeSubscribers != nil {
+		params["include_subscribers"] = *req.IncludeSubscribers
 	}
 
 	body, err := c.Get("users/me/subscriptions", params)
@@ -310,10 +314,10 @@ type SubscribeRequest struct {
 		Description string `json:"description,omitempty"`
 	} `json:"subscriptions"`
 	Principals                 []interface{} `json:"principals,omitempty"`
-	AuthorizationErrorsFatal   bool          `json:"authorization_errors_fatal,omitempty"`
-	Announce                   bool          `json:"announce,omitempty"`
-	InviteOnly                 bool          `json:"invite_only,omitempty"`
-	HistoryPublicToSubscribers bool          `json:"history_public_to_subscribers,omitempty"`
+	AuthorizationErrorsFatal   *bool         `json:"authorization_errors_fatal,omitempty"`
+	Announce                   *bool         `json:"announce,omitempty"`
+	InviteOnly                 *bool         `json:"invite_only,omitempty"`
+	HistoryPublicToSubscribers *bool         `json:"history_public_to_subscribers,omitempty"`
 	StreamPostPolicy           int           `json:"stream_post_policy,omitempty"`
 	MessageRetentionDays       interface{}   `json:"message_retention_days,omitempty"`
 }
@@ -326,17 +330,17 @@ func (c *Client) Subscribe(req SubscribeRequest) (*CreateStreamResponse, error) 
 	if len(req.Principals) > 0 {
 		params["principals"] = req.Principals
 	}
-	if req.AuthorizationErrorsFatal {
-		params["authorization_errors_fatal"] = true
+	if req.AuthorizationErrorsFatal != nil {
+		params["authorization_errors_fatal"] = *req.AuthorizationErrorsFatal
 	}
-	if req.Announce {
-		params["announce"] = true
+	if req.Announce != nil {
+		params["announce"] = *req.Announce
 	}
-	if req.InviteOnly {
-		params["invite_only"] = true
+	if req.InviteOnly != nil {
+		params["invite_only"] = *req.InviteOnly
 	}
-	if req.HistoryPublicToSubscribers {
-		params["history_public_to_subscribers"] = true
+	if req.HistoryPublicToSubscribers != nil {
+		params["history_public_to_subscribers"] = *req.HistoryPublicToSubscribers
 	}
 	if req.StreamPostPolicy > 0 {
 		params["stream_post_policy"] = req.StreamPostPolicy
@@ -490,11 +494,11 @@ type MoveTopicRequest struct {
 	StreamID                    int                     `json:"stream_id"`
 	NewStreamID                 int                     `json:"new_stream_id,omitempty"`
 	Topic                       string                  `json:"topic"`
-	NewTopic                    string                  `json:"new_topic,omitempty"`
+	NewTopic                    *string                 `json:"new_topic,omitempty"`
 	MessageID                   int                     `json:"message_id,omitempty"`
 	PropagateMode               types.EditPropagateMode `json:"propagate_mode,omitempty"`
-	SendNotificationToOldThread bool                    `json:"send_notification_to_old_thread,omitempty"`
-	SendNotificationToNewThread bool                    `json:"send_notification_to_new_thread,omitempty"`
+	SendNotificationToOldThread *bool                   `json:"send_notification_to_old_thread,omitempty"`
+	SendNotificationToNewThread *bool                   `json:"send_notification_to_new_thread,omitempty"`
 }
 
 // MoveTopic moves a topic to another stream and/or renames it
@@ -525,19 +529,19 @@ func (c *Client) MoveTopic(req MoveTopicRequest) (*types.Response, error) {
 	if req.NewStreamID > 0 {
 		params["stream_id"] = req.NewStreamID
 	}
-	if req.NewTopic != "" {
-		params["topic"] = req.NewTopic
+	if req.NewTopic != nil {
+		params["topic"] = *req.NewTopic
 	}
 	if req.PropagateMode != "" {
 		params["propagate_mode"] = req.PropagateMode
 	} else {
 		params["propagate_mode"] = types.ChangeAll
 	}
-	if req.SendNotificationToOldThread {
-		params["send_notification_to_old_thread"] = true
+	if req.SendNotificationToOldThread != nil {
+		params["send_notification_to_old_thread"] = *req.SendNotificationToOldThread
 	}
-	if req.SendNotificationToNewThread {
-		params["send_notification_to_new_thread"] = true
+	if req.SendNotificationToNewThread != nil {
+		params["send_notification_to_new_thread"] = *req.SendNotificationToNewThread
 	}
 
 	body, err := c.Patch(fmt.Sprintf("messages/%d", messageID), params)

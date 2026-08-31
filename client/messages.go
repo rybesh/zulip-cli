@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/rybesh/zulip-cli/types"
 )
@@ -74,9 +75,9 @@ type GetMessagesRequest struct {
 	NumBefore            int            `json:"num_before"`
 	NumAfter             int            `json:"num_after"`
 	Narrow               []types.Narrow `json:"narrow,omitempty"`
-	ClientGravatar       bool           `json:"client_gravatar,omitempty"`
-	ApplyMarkdown        bool           `json:"apply_markdown,omitempty"`
-	UseFirstUnreadAnchor bool           `json:"use_first_unread_anchor,omitempty"`
+	ClientGravatar       *bool          `json:"client_gravatar,omitempty"`
+	ApplyMarkdown        *bool          `json:"apply_markdown,omitempty"`
+	UseFirstUnreadAnchor *bool          `json:"use_first_unread_anchor,omitempty"`
 }
 
 // GetMessagesResponse represents messages response
@@ -101,14 +102,14 @@ func (c *Client) GetMessages(req GetMessagesRequest) (*GetMessagesResponse, erro
 	if len(req.Narrow) > 0 {
 		params["narrow"] = req.Narrow
 	}
-	if req.ClientGravatar {
-		params["client_gravatar"] = true
+	if req.ClientGravatar != nil {
+		params["client_gravatar"] = *req.ClientGravatar
 	}
-	if req.ApplyMarkdown {
-		params["apply_markdown"] = true
+	if req.ApplyMarkdown != nil {
+		params["apply_markdown"] = *req.ApplyMarkdown
 	}
-	if req.UseFirstUnreadAnchor {
-		params["use_first_unread_anchor"] = true
+	if req.UseFirstUnreadAnchor != nil {
+		params["use_first_unread_anchor"] = *req.UseFirstUnreadAnchor
 	}
 
 	body, err := c.Get("messages", params)
@@ -148,11 +149,11 @@ func (c *Client) GetRawMessage(messageID int) (*GetRawMessageResponse, error) {
 // UpdateMessageRequest represents a message update request
 type UpdateMessageRequest struct {
 	MessageID                   int                     `json:"message_id"`
-	Content                     string                  `json:"content,omitempty"`
-	Topic                       string                  `json:"topic,omitempty"`
+	Content                     *string                 `json:"content,omitempty"`
+	Topic                       *string                 `json:"topic,omitempty"`
 	PropagateMode               types.EditPropagateMode `json:"propagate_mode,omitempty"`
-	SendNotificationToOldThread bool                    `json:"send_notification_to_old_thread,omitempty"`
-	SendNotificationToNewThread bool                    `json:"send_notification_to_new_thread,omitempty"`
+	SendNotificationToOldThread *bool                   `json:"send_notification_to_old_thread,omitempty"`
+	SendNotificationToNewThread *bool                   `json:"send_notification_to_new_thread,omitempty"`
 	StreamID                    int                     `json:"stream_id,omitempty"`
 }
 
@@ -160,20 +161,20 @@ type UpdateMessageRequest struct {
 func (c *Client) UpdateMessage(req UpdateMessageRequest) (*types.Response, error) {
 	params := map[string]interface{}{}
 
-	if req.Content != "" {
-		params["content"] = req.Content
+	if req.Content != nil {
+		params["content"] = *req.Content
 	}
-	if req.Topic != "" {
-		params["topic"] = req.Topic
+	if req.Topic != nil {
+		params["topic"] = *req.Topic
 	}
 	if req.PropagateMode != "" {
 		params["propagate_mode"] = req.PropagateMode
 	}
-	if req.SendNotificationToOldThread {
-		params["send_notification_to_old_thread"] = true
+	if req.SendNotificationToOldThread != nil {
+		params["send_notification_to_old_thread"] = *req.SendNotificationToOldThread
 	}
-	if req.SendNotificationToNewThread {
-		params["send_notification_to_new_thread"] = true
+	if req.SendNotificationToNewThread != nil {
+		params["send_notification_to_new_thread"] = *req.SendNotificationToNewThread
 	}
 	if req.StreamID > 0 {
 		params["stream_id"] = req.StreamID
@@ -416,10 +417,11 @@ type UploadFileResponse struct {
 	URI string `json:"uri"`
 }
 
-// UploadFile uploads a file
+// UploadFile uploads a file. Only the base name of filename is sent: the local
+// path the caller happened to have is not the name the server should store.
 func (c *Client) UploadFile(file io.Reader, filename string) (*UploadFileResponse, error) {
-	files := map[string]io.Reader{
-		filename: file,
+	files := map[string]FormFile{
+		"file": {Filename: filepath.Base(filename), Reader: file},
 	}
 
 	body, err := c.PostWithFiles("user_uploads", nil, files)

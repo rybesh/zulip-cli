@@ -64,8 +64,12 @@ var updateUserGroupCmd = &cobra.Command{
 			return fmt.Errorf("invalid group ID: %w", err)
 		}
 
-		name, _ := cmd.Flags().GetString("name")
-		description, _ := cmd.Flags().GetString("description")
+		name := stringFlag(cmd, "name")
+		description := stringFlag(cmd, "description")
+
+		if name == nil && description == nil {
+			return fmt.Errorf("either --name or --description is required")
+		}
 
 		req := client.UpdateUserGroupRequest{
 			GroupID:     groupID,

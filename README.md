@@ -48,6 +48,19 @@ export ZULIP_API_KEY=your_api_key_here
 
 You can get your API key from your Zulip account settings.
 
+Optional settings:
+
+```bash
+export ZULIP_TIMEOUT=45s              # request timeout, default 15s
+export ZULIP_CERT_BUNDLE=/path/ca.pem # trust a private certificate authority
+export ZULIP_CLIENT_CERT=/path/client.pem
+export ZULIP_CLIENT_CERT_KEY=/path/client.key
+export ZULIP_INSECURE=true            # skip TLS verification (not recommended)
+```
+
+`--timeout` overrides `ZULIP_TIMEOUT` for a single invocation. File uploads on a
+slow link are the usual reason to raise it.
+
 For convenience, add to your shell profile:
 ```bash
 # ~/.bashrc or ~/.zshrc
@@ -72,10 +85,20 @@ zulip-cli list-channels
 zulip-cli get-messages --channel general --num-before 10
 
 # Listen for new messages
-zulip-cli listen --messages-only
+zulip-cli listen
 ```
 
 ## Usage
+
+Every command prints JSON on stdout; status lines and errors go to stderr, so
+output stays safe to pipe. `--output` currently accepts only `json` — YAML and
+table formats are on the roadmap, and asking for one is an error rather than
+silently getting JSON.
+
+Boolean flags are only sent when you pass them, so leaving one out means "use
+the server's default" and passing `--flag=false` really does turn the setting
+off. String flags work the same way: `--description ""` clears a description,
+while omitting `--description` leaves it alone.
 
 ### Messages
 
@@ -142,6 +165,9 @@ zulip-cli unsubscribe random
 
 # List your subscriptions
 zulip-cli list-subscriptions
+
+# List only the channels you are subscribed to
+zulip-cli list-channels --include-public=false
 
 # Mute a topic
 zulip-cli mute-topic --channel general --topic "off-topic"
@@ -418,23 +444,47 @@ config := client.Config{
     URL:      "https://your-org.zulipchat.com",
     Email:    "bot@example.com",
     APIKey:   "your_api_key",
-    Verbose:  true,  // Enable debug output
-    Insecure: false, // Set true to skip TLS verification (not recommended)
+    Verbose:  true,            // Enable debug output
+    Insecure: false,           // Set true to skip TLS verification (not recommended)
+    Timeout:  45 * time.Second, // Zero means the 15s default
+
+    // For servers behind a private CA or requiring a client certificate
+    CertBundle:    "/path/ca.pem",
+    ClientCert:    "/path/client.pem",
+    ClientCertKey: "/path/client.key",
 }
 
 c, err := client.NewClientWithConfig(config)
 ```
 
-### Event Streaming
+Constructing a client does not contact the server. Credential problems surface
+as an `*client.APIError` from the first real request:
 
 ```go
+if _, err := c.GetProfile(); err != nil {
+    var apiErr *client.APIError
+    if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
+        log.Fatal("bad credentials")
+    }
+}
+```
+
+### Event Streaming
+
+Both listeners run until the context is cancelled, retry transient failures
+with backoff, and deregister their event queue on the way out.
+
+```go
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+defer stop()
+
 // Listen for all events
-err := c.CallOnEachEvent(func(event map[string]interface{}) {
+err := c.CallOnEachEvent(ctx, func(event map[string]interface{}) {
     fmt.Printf("Event: %v\n", event)
 }, []string{"message", "reaction"}, nil)
 
 // Listen for messages only
-err := c.CallOnEachMessage(func(msg types.Message) {
+err := c.CallOnEachMessage(ctx, func(msg types.Message) {
     fmt.Printf("Message from %s: %s\n", msg.SenderFullName, msg.Content)
 })
 ```

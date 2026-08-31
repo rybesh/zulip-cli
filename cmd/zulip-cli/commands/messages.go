@@ -102,10 +102,10 @@ var updateMessageCmd = &cobra.Command{
 			return fmt.Errorf("invalid message ID: %w", err)
 		}
 
-		content, _ := cmd.Flags().GetString("content")
-		topic, _ := cmd.Flags().GetString("topic")
+		content := stringFlag(cmd, "content")
+		topic := stringFlag(cmd, "topic")
 
-		if content == "" && topic == "" {
+		if content == nil && topic == nil {
 			return fmt.Errorf("either --content or --topic is required")
 		}
 

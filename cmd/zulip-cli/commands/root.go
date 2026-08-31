@@ -37,8 +37,10 @@ Example:
   export ZULIP_API_KEY=your_api_key_here
   zulip-cli send-message --stream general --topic "Hello" --content "Hi there!"`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip client initialization for help and version commands
-		if cmd.Name() == "help" || cmd.Name() == "completion" {
+		// These commands do not talk to a Zulip server, so they must not
+		// require credentials or pay the cost of connecting.
+		switch cmd.Name() {
+		case "help", "completion", "version":
 			return nil
 		}
 
@@ -62,6 +64,11 @@ func Execute() error {
 }
 
 func init() {
+	// Setting Version makes cobra provide a --version flag. Cobra handles that
+	// flag before PersistentPreRunE runs, so it needs no client either.
+	rootCmd.Version = client.ClientVersion
+	rootCmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
+
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "json", "Output format (json, yaml, table)")
 
@@ -119,6 +126,8 @@ func init() {
 
 	rootCmd.AddCommand(serverSettingsCmd)
 	rootCmd.AddCommand(listenCmd)
+
+	rootCmd.AddCommand(versionCmd)
 }
 
 // printJSON prints data as JSON

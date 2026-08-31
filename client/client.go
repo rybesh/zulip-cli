@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	APIVersion   = "v1"
-	ClientVersion = "0.1.0"
+	APIVersion = "v1"
 )
 
 // Client is the main Zulip API client

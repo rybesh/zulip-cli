@@ -173,6 +173,10 @@ zulip-cli update-presence active
 ### Other Commands
 
 ```bash
+# Print version information
+zulip-cli version          # structured, honors --output
+zulip-cli --version        # single line
+
 # Get server settings
 zulip-cli server-settings
 

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 )
 
 // GetUserGroupsResponse represents user groups list response

@@ -5,8 +5,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/intelligrit/zulip-cli/client"
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/client"
+	"github.com/rybesh/zulip-cli/types"
 	"github.com/spf13/cobra"
 )
 

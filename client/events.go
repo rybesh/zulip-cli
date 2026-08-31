@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 )
 
 // RegisterRequest represents an event queue registration request

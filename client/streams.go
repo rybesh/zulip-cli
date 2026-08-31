@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 )
 
 // GetStreamsRequest represents a request to list streams

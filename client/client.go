@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intelligrit/zulip-cli/types"
+	"github.com/rybesh/zulip-cli/types"
 )
 
 const (

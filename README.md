@@ -23,13 +23,13 @@ A comprehensive command-line interface and Go library for the Zulip API. Provide
 ## Installation
 
 ```bash
-go install github.com/intelligrit/zulip-cli/cmd/zulip-cli@latest
+go install github.com/rybesh/zulip-cli/cmd/zulip-cli@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/intelligrit/zulip-cli.git
+git clone https://github.com/rybesh/zulip-cli.git
 cd zulip-cli
 go build -o zulip-cli ./cmd/zulip-cli
 ```
@@ -348,7 +348,7 @@ zulip-cli listen --messages-only | jq --unbuffered -r \
 ### Installation
 
 ```bash
-go get github.com/intelligrit/zulip-cli
+go get github.com/rybesh/zulip-cli
 ```
 
 ### Example Usage
@@ -360,8 +360,8 @@ import (
     "fmt"
     "log"
 
-    "github.com/intelligrit/zulip-cli/client"
-    "github.com/intelligrit/zulip-cli/types"
+    "github.com/rybesh/zulip-cli/client"
+    "github.com/rybesh/zulip-cli/types"
 )
 
 func main() {

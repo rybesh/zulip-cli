@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -254,6 +255,21 @@ func tlsConfig(cfg Config) (*tls.Config, error) {
 	return conf, nil
 }
 
+// encodeParam renders a parameter value for the wire. Strings are sent as
+// typed, including named string types such as types.EditPropagateMode, which
+// JSON would otherwise wrap in quotes the server does not expect. Everything
+// else becomes JSON, which is how Zulip reads numbers, booleans, and lists.
+func encodeParam(val interface{}) string {
+	if s, ok := val.(string); ok {
+		return s
+	}
+	if rv := reflect.ValueOf(val); rv.Kind() == reflect.String {
+		return rv.String()
+	}
+	jsonBytes, _ := json.Marshal(val)
+	return string(jsonBytes)
+}
+
 // requestTimeout is the bound for an ordinary request.
 func (c *Client) requestTimeout() time.Duration {
 	if c.Timeout == 0 {
@@ -288,15 +304,7 @@ func (c *Client) doRequestContext(ctx context.Context, timeout time.Duration, me
 
 		// Add parameters
 		for key, val := range params {
-			var strVal string
-			switch v := val.(type) {
-			case string:
-				strVal = v
-			default:
-				jsonBytes, _ := json.Marshal(v)
-				strVal = string(jsonBytes)
-			}
-			writer.WriteField(key, strVal)
+			writer.WriteField(key, encodeParam(val))
 		}
 
 		// Add files
@@ -321,13 +329,7 @@ func (c *Client) doRequestContext(ctx context.Context, timeout time.Duration, me
 		if len(params) > 0 {
 			values := url.Values{}
 			for key, val := range params {
-				switch v := val.(type) {
-				case string:
-					values.Add(key, v)
-				default:
-					jsonBytes, _ := json.Marshal(v)
-					values.Add(key, string(jsonBytes))
-				}
+				values.Add(key, encodeParam(val))
 			}
 			fullURL += "?" + values.Encode()
 		}
@@ -336,13 +338,7 @@ func (c *Client) doRequestContext(ctx context.Context, timeout time.Duration, me
 		// Form data for POST/PATCH/PUT
 		values := url.Values{}
 		for key, val := range params {
-			switch v := val.(type) {
-			case string:
-				values.Add(key, v)
-			default:
-				jsonBytes, _ := json.Marshal(v)
-				values.Add(key, string(jsonBytes))
-			}
+			values.Add(key, encodeParam(val))
 		}
 		req, err = http.NewRequestWithContext(ctx, method, fullURL, strings.NewReader(values.Encode()))
 		if err != nil {

@@ -144,6 +144,11 @@ func init() {
 	rootCmd.AddCommand(markStreamAsReadCmd)
 	rootCmd.AddCommand(markTopicAsReadCmd)
 	rootCmd.AddCommand(getMessageHistoryCmd)
+	rootCmd.AddCommand(getRawMessageCmd)
+	rootCmd.AddCommand(updateMessageFlagsCmd)
+	rootCmd.AddCommand(renderMessageCmd)
+	rootCmd.AddCommand(checkMessagesMatchNarrowCmd)
+	rootCmd.AddCommand(listAttachmentsCmd)
 
 	rootCmd.AddCommand(listStreamsCmd)
 	rootCmd.AddCommand(getStreamCmd)
@@ -161,6 +166,10 @@ func init() {
 	rootCmd.AddCommand(unfollowTopicCmd)
 	rootCmd.AddCommand(setTopicVisibilityCmd)
 	rootCmd.AddCommand(moveTopicCmd)
+	rootCmd.AddCommand(getSubscriptionStatusCmd)
+	rootCmd.AddCommand(getStreamEmailAddressCmd)
+	rootCmd.AddCommand(updateSubscriptionCmd)
+	rootCmd.AddCommand(addDefaultStreamCmd)
 
 	rootCmd.AddCommand(listUsersCmd)
 	rootCmd.AddCommand(getUserCmd)
@@ -171,6 +180,9 @@ func init() {
 	rootCmd.AddCommand(reactivateUserCmd)
 	rootCmd.AddCommand(getUserPresenceCmd)
 	rootCmd.AddCommand(updatePresenceCmd)
+	rootCmd.AddCommand(getRealmPresenceCmd)
+	rootCmd.AddCommand(setTypingStatusCmd)
+	rootCmd.AddCommand(updateNotificationSettingsCmd)
 
 	rootCmd.AddCommand(listUserGroupsCmd)
 	rootCmd.AddCommand(createUserGroupCmd)
@@ -187,8 +199,22 @@ func init() {
 	rootCmd.AddCommand(addAlertWordsCmd)
 	rootCmd.AddCommand(removeAlertWordsCmd)
 
+	rootCmd.AddCommand(listLinkifiersCmd)
+	rootCmd.AddCommand(addLinkifierCmd)
+	rootCmd.AddCommand(removeLinkifierCmd)
+
+	rootCmd.AddCommand(listProfileFieldsCmd)
+	rootCmd.AddCommand(createProfileFieldCmd)
+	rootCmd.AddCommand(updateProfileFieldCmd)
+	rootCmd.AddCommand(deleteProfileFieldCmd)
+	rootCmd.AddCommand(reorderProfileFieldsCmd)
+
+	rootCmd.AddCommand(getStorageCmd)
+	rootCmd.AddCommand(updateStorageCmd)
+
 	rootCmd.AddCommand(serverSettingsCmd)
 	rootCmd.AddCommand(listenCmd)
+	rootCmd.AddCommand(deregisterCmd)
 
 	rootCmd.AddCommand(versionCmd)
 

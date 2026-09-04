@@ -148,6 +148,25 @@ With no --event-types, listens for messages only.`,
 	},
 }
 
+var deregisterCmd = &cobra.Command{
+	Use:   "deregister [queue-id]",
+	Short: "Release an event queue",
+	Long: `Release an event queue the server is still holding open.
+
+The listen command releases its own queue when it is stopped with Ctrl-C, but
+a queue survives a listener that was killed outright, and the server goes on
+collecting events for it until it expires. This releases one early.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		resp, err := zulipClient.Deregister(args[0])
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
 func init() {
 	listenCmd.Flags().StringSlice("event-types", nil, "Event types to listen for (comma-separated)")
 	listenCmd.Flags().Bool("messages-only", false, "Listen for messages only (the default when no --event-types are given)")

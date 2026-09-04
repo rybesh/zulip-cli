@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/rybesh/zulip-cli/client"
 	"github.com/rybesh/zulip-cli/types"
@@ -78,32 +79,59 @@ var createStreamCmd = &cobra.Command{
 	},
 }
 
+// updateChannelFlags are the settings update-channel can change. A request
+// that names none of them is a mistake worth catching before it is sent.
+var updateChannelFlags = []string{
+	"description", "new-name", "invite-only", "is-web-public",
+	"history-public-to-subscribers", "message-retention-days",
+	"can-send-message-group",
+}
+
 var updateStreamCmd = &cobra.Command{
 	Use:     "update-channel [channel-id]",
 	Aliases: []string{"update-stream"},
 	Short:   "Update a channel",
-	Args:    cobra.ExactArgs(1),
+	Long: `Update a channel's name, description, privacy, or retention policy.
+
+The three privacy settings are tri-state. Leaving one out changes nothing, and
+--invite-only=false makes a private channel public rather than being taken as
+"leave it alone".
+
+Making a public channel private, or the other way around, may also need
+--history-public-to-subscribers: the server decides what happens to the
+existing history from the two together.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		streamID, err := strconv.Atoi(args[0])
 		if err != nil {
 			return fmt.Errorf("invalid stream ID: %w", err)
 		}
 
-		description := stringFlag(cmd, "description")
-		newName := stringFlag(cmd, "new-name")
-		postingGroup := stringFlag(cmd, "can-send-message-group")
-
-		if description == nil && newName == nil && postingGroup == nil {
-			return fmt.Errorf("nothing to change: pass --description, --new-name, or --can-send-message-group")
+		changed := false
+		for _, name := range updateChannelFlags {
+			if cmd.Flags().Changed(name) {
+				changed = true
+				break
+			}
+		}
+		if !changed {
+			return fmt.Errorf("nothing to change: pass --%s", strings.Join(updateChannelFlags, ", --"))
 		}
 
 		req := client.UpdateStreamRequest{
-			StreamID:    streamID,
-			Description: description,
-			NewName:     newName,
+			StreamID:                   streamID,
+			Description:                stringFlag(cmd, "description"),
+			NewName:                    stringFlag(cmd, "new-name"),
+			IsPrivate:                  boolFlag(cmd, "invite-only"),
+			IsWebPublic:                boolFlag(cmd, "is-web-public"),
+			HistoryPublicToSubscribers: boolFlag(cmd, "history-public-to-subscribers"),
 		}
 
-		if postingGroup != nil {
+		if days := stringFlag(cmd, "message-retention-days"); days != nil {
+			req.MessageRetentionDays = client.RetentionDays(*days)
+		}
+
+		if postingGroup := stringFlag(cmd, "can-send-message-group"); postingGroup != nil {
 			group, err := (&groupResolver{client: zulipClient}).resolve(*postingGroup)
 			if err != nil {
 				return fmt.Errorf("--can-send-message-group: %w", err)
@@ -163,7 +191,17 @@ var listStreamTopicsCmd = &cobra.Command{
 var subscribeCmd = &cobra.Command{
 	Use:   "subscribe [channel-names...]",
 	Short: "Subscribe to one or more channels",
-	Args:  cobra.MinimumNArgs(1),
+	Long: `Subscribe to one or more channels, creating any that do not exist yet.
+
+With no --principals this subscribes you. Naming other people subscribes them
+instead of you, which needs permission to add subscribers to the channel:
+
+  zulip-cli subscribe general --principals 12,dana@example.com
+
+Subscribing someone the caller may not add is an error that abandons the whole
+request, unless --authorization-errors-fatal=false, which subscribes everyone
+allowed and reports the rest under "unauthorized".`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
 
@@ -175,8 +213,16 @@ var subscribeCmd = &cobra.Command{
 		}
 
 		req := client.SubscribeRequest{
-			Subscriptions: subscriptions,
+			Subscriptions:            subscriptions,
+			AuthorizationErrorsFatal: boolFlag(cmd, "authorization-errors-fatal"),
+			Announce:                 boolFlag(cmd, "announce"),
 		}
+
+		principals, err := principalsFlag(cmd)
+		if err != nil {
+			return err
+		}
+		req.Principals = principals
 
 		resp, err := zulipClient.Subscribe(req)
 		if err != nil {
@@ -190,13 +236,203 @@ var subscribeCmd = &cobra.Command{
 var unsubscribeCmd = &cobra.Command{
 	Use:   "unsubscribe [channel-names...]",
 	Short: "Unsubscribe from one or more channels",
-	Args:  cobra.MinimumNArgs(1),
+	Long: `Unsubscribe from one or more channels.
+
+With no --principals this unsubscribes you. Naming other people unsubscribes
+them instead, which needs permission to remove subscribers from the channel.`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := client.UnsubscribeRequest{
 			Subscriptions: args,
 		}
 
+		principals, err := principalsFlag(cmd)
+		if err != nil {
+			return err
+		}
+		req.Principals = principals
+
 		resp, err := zulipClient.Unsubscribe(req)
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
+// principalsFlag reads the people a subscription change is about, given as
+// user IDs or email addresses. An empty result means the caller themselves,
+// which is what the server does with no principals at all.
+func principalsFlag(cmd *cobra.Command) ([]interface{}, error) {
+	values, _ := cmd.Flags().GetStringSlice("principals")
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	userIDs, err := resolveUserIDs(zulipClient, values)
+	if err != nil {
+		return nil, fmt.Errorf("--principals: %w", err)
+	}
+
+	principals := make([]interface{}, 0, len(userIDs))
+	for _, userID := range userIDs {
+		principals = append(principals, userID)
+	}
+	return principals, nil
+}
+
+var getSubscriptionStatusCmd = &cobra.Command{
+	Use:   "get-subscription-status [user] [channel]",
+	Short: "Check whether a user is subscribed to a channel",
+	Long: `Check whether a user is subscribed to a channel.
+
+The user is a user ID or an email address, and the channel is a channel ID or
+a channel name.`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		userIDs, err := resolveUserIDs(zulipClient, args[:1])
+		if err != nil {
+			return err
+		}
+
+		streamID, err := resolveChannelID(zulipClient, args[1])
+		if err != nil {
+			return err
+		}
+
+		resp, err := zulipClient.GetSubscriptionStatus(userIDs[0], streamID)
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
+var getStreamEmailAddressCmd = &cobra.Command{
+	Use:     "get-channel-email-address [channel]",
+	Aliases: []string{"get-stream-email-address"},
+	Short:   "Get the address that emails messages into a channel",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		streamID, err := resolveChannelID(zulipClient, args[0])
+		if err != nil {
+			return err
+		}
+
+		resp, err := zulipClient.GetStreamEmailAddress(streamID)
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
+// subscriptionSettingFlags are the per-subscription preferences, each naming
+// the flag, the property the server calls it, and how to read the value the
+// user typed. These are your own settings for a channel, not the channel's.
+var subscriptionSettingFlags = []struct {
+	name     string
+	property string
+	help     string
+	value    func(*cobra.Command, string) interface{}
+}{
+	{"color", "color", "Colour the channel shows in, as a hex code such as #76ce90", stringSettingValue},
+	{"pin-to-top", "pin_to_top", "Pin the channel to the top of your list", boolSettingValue},
+	{"is-muted", "is_muted", "Mute the channel", boolSettingValue},
+	{"desktop-notifications", "desktop_notifications", "Show desktop notifications for the channel", boolSettingValue},
+	{"audible-notifications", "audible_notifications", "Play a sound for the channel", boolSettingValue},
+	{"push-notifications", "push_notifications", "Send mobile push notifications for the channel", boolSettingValue},
+	{"email-notifications", "email_notifications", "Send email notifications for the channel", boolSettingValue},
+	{"wildcard-mentions-notify", "wildcard_mentions_notify", "Notify you on @all and @channel in the channel", boolSettingValue},
+}
+
+func boolSettingValue(cmd *cobra.Command, name string) interface{} {
+	if value := boolFlag(cmd, name); value != nil {
+		return *value
+	}
+	return nil
+}
+
+func stringSettingValue(cmd *cobra.Command, name string) interface{} {
+	if value := stringFlag(cmd, name); value != nil {
+		return *value
+	}
+	return nil
+}
+
+var updateSubscriptionCmd = &cobra.Command{
+	Use:     "update-subscription [channel]",
+	Aliases: []string{"update-subscription-settings"},
+	Short:   "Change your own settings for a channel",
+	Long: `Change your own settings for a channel you are subscribed to.
+
+These are personal preferences — the channel's colour, whether it is pinned or
+muted, and which notifications it sends — and they change nothing for anyone
+else. update-channel is what changes the channel itself.
+
+The channel is a channel ID or a channel name.
+
+  zulip-cli update-subscription general --color '#76ce90' --pin-to-top
+  zulip-cli update-subscription general --is-muted=false --push-notifications`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var data []map[string]interface{}
+		var names []string
+
+		for _, setting := range subscriptionSettingFlags {
+			names = append(names, setting.name)
+			value := setting.value(cmd, setting.name)
+			if value == nil {
+				continue
+			}
+			data = append(data, map[string]interface{}{
+				"property": setting.property,
+				"value":    value,
+			})
+		}
+
+		if len(data) == 0 {
+			return fmt.Errorf("nothing to change: pass --%s", strings.Join(names, ", --"))
+		}
+
+		// The channel is looked up only once there is something to apply to it.
+		streamID, err := resolveChannelID(zulipClient, args[0])
+		if err != nil {
+			return err
+		}
+		for _, entry := range data {
+			entry["stream_id"] = streamID
+		}
+
+		resp, err := zulipClient.UpdateSubscriptionSettings(
+			client.UpdateSubscriptionSettingsRequest{SubscriptionData: data})
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
+var addDefaultStreamCmd = &cobra.Command{
+	Use:     "add-default-channel [channel]",
+	Aliases: []string{"add-default-stream"},
+	Short:   "Subscribe new users to a channel automatically",
+	Long: `Add a channel to the organization's default channels.
+
+New users are subscribed to it when they join. The channel is a channel ID or
+a channel name.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		streamID, err := resolveChannelID(zulipClient, args[0])
+		if err != nil {
+			return err
+		}
+
+		resp, err := zulipClient.AddDefaultStream(streamID)
 		if err != nil {
 			return err
 		}
@@ -362,10 +598,29 @@ func init() {
 
 	updateStreamCmd.Flags().String("description", "", "New description")
 	updateStreamCmd.Flags().String("new-name", "", "New name")
+	updateStreamCmd.Flags().Bool("invite-only", false, "Make the channel private")
+	updateStreamCmd.Flags().Bool("is-web-public", false, "Make the channel readable by anyone on the internet")
+	updateStreamCmd.Flags().Bool("history-public-to-subscribers", false,
+		"Share history with users who subscribe later")
+	updateStreamCmd.Flags().String("message-retention-days", "",
+		`Days to keep messages, or "realm_default" or "unlimited"`)
 	updateStreamCmd.Flags().String("can-send-message-group", "",
 		"Who may post in the channel"+groupFlagHelp)
 
 	subscribeCmd.Flags().String("description", "", "Channel description (for new channels)")
+	subscribeCmd.Flags().Bool("announce", false, "Announce any channel this creates")
+	subscribeCmd.Flags().Bool("authorization-errors-fatal", true,
+		"Fail the whole request if any of --principals may not be subscribed")
+	addPrincipalsFlag(subscribeCmd, "subscribe")
+	addPrincipalsFlag(unsubscribeCmd, "unsubscribe")
+
+	for _, setting := range subscriptionSettingFlags {
+		if setting.property == "color" {
+			updateSubscriptionCmd.Flags().String(setting.name, "", setting.help)
+			continue
+		}
+		updateSubscriptionCmd.Flags().Bool(setting.name, false, setting.help)
+	}
 
 	listSubscriptionsCmd.Flags().Bool("include-subscribers", false, "Include subscriber lists")
 
@@ -426,6 +681,13 @@ func addChannelSettingFlags(cmd *cobra.Command) {
 	for _, permission := range channelPermissionFlags {
 		cmd.Flags().String(permission.name, "", permission.help+groupFlagHelp)
 	}
+}
+
+// addPrincipalsFlag registers the people a subscription change is about. The
+// default — nobody named — is the caller themselves.
+func addPrincipalsFlag(cmd *cobra.Command, verb string) {
+	cmd.Flags().StringSlice("principals", nil,
+		"User IDs or email addresses to "+verb+" instead of yourself (comma-separated)")
 }
 
 // channelSettings reads the settings flags the user actually set. Group names

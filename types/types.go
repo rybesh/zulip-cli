@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -26,6 +27,20 @@ const (
 	ChangeAll   EditPropagateMode = "change_all"
 	ChangeLater EditPropagateMode = "change_later"
 )
+
+// EditPropagateModes lists the modes in the order they are documented, for
+// help text and error messages.
+var EditPropagateModes = []EditPropagateMode{ChangeOne, ChangeLater, ChangeAll}
+
+// ParseEditPropagateMode turns what someone typed into a propagate mode.
+func ParseEditPropagateMode(value string) (EditPropagateMode, error) {
+	mode := EditPropagateMode(strings.ToLower(value))
+	if slices.Contains(EditPropagateModes, mode) {
+		return mode, nil
+	}
+	return "", fmt.Errorf("unknown propagate mode %q: it must be one of %s",
+		value, joinNames(EditPropagateModes))
+}
 
 // TopicVisibilityPolicy is a user's personal preference for one topic. Zulip
 // sends it as an integer, and the zero value is the absence of a preference.
@@ -97,6 +112,19 @@ const (
 	ZulipExtraEmoji EmojiType = "zulip_extra_emoji"
 )
 
+// EmojiTypes lists the reaction types the server accepts.
+var EmojiTypes = []EmojiType{UnicodeEmoji, RealmEmoji, ZulipExtraEmoji}
+
+// ParseEmojiType turns what someone typed into a reaction type.
+func ParseEmojiType(value string) (EmojiType, error) {
+	emoji := EmojiType(strings.ToLower(value))
+	if slices.Contains(EmojiTypes, emoji) {
+		return emoji, nil
+	}
+	return "", fmt.Errorf("unknown reaction type %q: it must be one of %s",
+		value, joinNames(EmojiTypes))
+}
+
 // MessageFlag represents flags that can be set on messages
 type MessageFlag string
 
@@ -109,6 +137,20 @@ const (
 	FlagHasAlertWord      MessageFlag = "has_alert_word"
 	FlagHistorical        MessageFlag = "historical"
 )
+
+// SettableMessageFlags are the flags a client may add or remove. The others
+// the server computes and reports, and it refuses to be told what they are.
+var SettableMessageFlags = []MessageFlag{FlagRead, FlagStarred, FlagCollapsed}
+
+// ParseMessageFlag turns what someone typed into a flag that can be set.
+func ParseMessageFlag(value string) (MessageFlag, error) {
+	flag := MessageFlag(strings.ToLower(value))
+	if slices.Contains(SettableMessageFlags, flag) {
+		return flag, nil
+	}
+	return "", fmt.Errorf("unknown message flag %q: it must be one of %s",
+		value, joinNames(SettableMessageFlags))
+}
 
 // Message represents a Zulip message
 type Message struct {
@@ -358,4 +400,14 @@ func (g *GroupSetting) UnmarshalJSON(data []byte) error {
 	}
 	*g = GroupSetting{DirectMembers: wire.DirectMembers, DirectSubgroups: wire.DirectSubgroups}
 	return nil
+}
+
+// joinNames lists the accepted spellings of a string-like type, for the error
+// a parse function returns when it is handed something else.
+func joinNames[T ~string](values []T) string {
+	names := make([]string, 0, len(values))
+	for _, value := range values {
+		names = append(names, string(value))
+	}
+	return strings.Join(names, ", ")
 }

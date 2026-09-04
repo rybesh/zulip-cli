@@ -331,10 +331,13 @@ type AddReactionRequest struct {
 	ReactionType types.EmojiType `json:"reaction_type,omitempty"`
 }
 
-// AddReaction adds an emoji reaction to a message
-func (c *Client) AddReaction(req AddReactionRequest) (*types.Response, error) {
-	params := map[string]interface{}{
-		"emoji_name": req.EmojiName,
+// reactionParams renders the emoji a reaction request names. The name is left
+// out when it is empty, since emoji_code and reaction_type identify the emoji
+// on their own and an empty name is not a name the server can look up.
+func (req AddReactionRequest) reactionParams() map[string]interface{} {
+	params := map[string]interface{}{}
+	if req.EmojiName != "" {
+		params["emoji_name"] = req.EmojiName
 	}
 	if req.EmojiCode != "" {
 		params["emoji_code"] = req.EmojiCode
@@ -342,6 +345,12 @@ func (c *Client) AddReaction(req AddReactionRequest) (*types.Response, error) {
 	if req.ReactionType != "" {
 		params["reaction_type"] = req.ReactionType
 	}
+	return params
+}
+
+// AddReaction adds an emoji reaction to a message
+func (c *Client) AddReaction(req AddReactionRequest) (*types.Response, error) {
+	params := req.reactionParams()
 
 	body, err := c.Post(fmt.Sprintf("messages/%d/reactions", req.MessageID), params)
 	if err != nil {
@@ -358,15 +367,7 @@ func (c *Client) AddReaction(req AddReactionRequest) (*types.Response, error) {
 
 // RemoveReaction removes an emoji reaction from a message
 func (c *Client) RemoveReaction(req AddReactionRequest) (*types.Response, error) {
-	params := map[string]interface{}{
-		"emoji_name": req.EmojiName,
-	}
-	if req.EmojiCode != "" {
-		params["emoji_code"] = req.EmojiCode
-	}
-	if req.ReactionType != "" {
-		params["reaction_type"] = req.ReactionType
-	}
+	params := req.reactionParams()
 
 	body, err := c.Delete(fmt.Sprintf("messages/%d/reactions", req.MessageID), params)
 	if err != nil {

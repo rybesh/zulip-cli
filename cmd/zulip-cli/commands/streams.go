@@ -241,44 +241,77 @@ var listSubscribersCmd = &cobra.Command{
 	},
 }
 
-var muteTopicCmd = &cobra.Command{
-	Use:   "mute-topic [channel] [topic]",
-	Short: "Mute a topic",
-	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		req := client.MuteTopicRequest{
-			Stream: args[0],
-			Topic:  args[1],
-			Op:     "add",
-		}
+// Muting, unmuting, following and unfollowing a topic are all one request
+// with a different visibility policy, so these commands are the same command
+// under four names people already reach for. Unmuting and unfollowing both
+// clear the policy, which is what the server does for either.
+var (
+	muteTopicCmd = topicVisibilityCmd("mute-topic",
+		"Mute a topic", types.VisibilityMuted)
+	unmuteTopicCmd = topicVisibilityCmd("unmute-topic",
+		"Clear a topic's visibility policy, unmuting it", types.VisibilityInherit)
+	followTopicCmd = topicVisibilityCmd("follow-topic",
+		"Follow a topic", types.VisibilityFollowed)
+	unfollowTopicCmd = topicVisibilityCmd("unfollow-topic",
+		"Clear a topic's visibility policy, unfollowing it", types.VisibilityInherit)
+)
 
-		resp, err := zulipClient.MuteTopic(req)
+// topicVisibilityCmd builds a command that sets one fixed visibility policy
+// for the topic named by its arguments.
+func topicVisibilityCmd(name, short string, policy types.TopicVisibilityPolicy) *cobra.Command {
+	return &cobra.Command{
+		Use:   name + " [channel] [topic]",
+		Short: short,
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setTopicVisibility(args[0], args[1], policy)
+		},
+	}
+}
+
+var setTopicVisibilityCmd = &cobra.Command{
+	Use:   "set-topic-visibility [channel] [topic] [policy]",
+	Short: "Set your visibility policy for a topic",
+	Long: `Set your own visibility policy for a topic.
+
+The policy is one of:
+
+  inherit   no policy of its own; the topic follows its channel (also "none")
+  muted     hide the topic
+  unmuted   show the topic even though its channel is muted
+  followed  follow the topic
+
+The mute-topic, unmute-topic, follow-topic and unfollow-topic commands are
+shorthand for the policies they name.`,
+	Args: cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		policy, err := types.ParseTopicVisibilityPolicy(args[2])
 		if err != nil {
 			return err
 		}
 
-		return printResult(resp)
+		return setTopicVisibility(args[0], args[1], policy)
 	},
 }
 
-var unmuteTopicCmd = &cobra.Command{
-	Use:   "unmute-topic [channel] [topic]",
-	Short: "Unmute a topic",
-	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		req := client.MuteTopicRequest{
-			Stream: args[0],
-			Topic:  args[1],
-			Op:     "remove",
-		}
+// setTopicVisibility applies policy to a topic in the channel the user named,
+// by ID or by name.
+func setTopicVisibility(channel, topic string, policy types.TopicVisibilityPolicy) error {
+	streamID, err := resolveChannelID(zulipClient, channel)
+	if err != nil {
+		return err
+	}
 
-		resp, err := zulipClient.MuteTopic(req)
-		if err != nil {
-			return err
-		}
+	resp, err := zulipClient.UpdateUserTopic(client.UpdateUserTopicRequest{
+		StreamID:         streamID,
+		Topic:            topic,
+		VisibilityPolicy: policy,
+	})
+	if err != nil {
+		return err
+	}
 
-		return printResult(resp)
-	},
+	return printResult(resp)
 }
 
 var moveTopicCmd = &cobra.Command{
@@ -457,6 +490,20 @@ func (r *groupResolver) resolve(value string) (*types.GroupSetting, error) {
 		return nil, fmt.Errorf("no user group named %q; pass a group ID or a name from list-user-groups", value)
 	}
 	return types.NamedGroup(id), nil
+}
+
+// resolveChannelID turns what the user typed for a channel — a channel ID, or
+// a channel name — into the ID the server wants.
+func resolveChannelID(c *client.Client, value string) (int, error) {
+	if id, err := strconv.Atoi(value); err == nil {
+		return id, nil
+	}
+
+	resp, err := c.GetStreamID(value)
+	if err != nil {
+		return 0, fmt.Errorf("failed to look up channel %q: %w", value, err)
+	}
+	return resp.StreamID, nil
 }
 
 // resolveUserIDs turns user IDs and email addresses into the user IDs the

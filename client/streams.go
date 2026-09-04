@@ -559,19 +559,80 @@ func (c *Client) UpdateSubscriptionSettings(req UpdateSubscriptionSettingsReques
 	return &resp, nil
 }
 
-// MuteTopicRequest represents a topic mute request
-type MuteTopicRequest struct {
-	Stream string `json:"stream"`
-	Topic  string `json:"topic"`
-	Op     string `json:"op"` // "add" or "remove"
+// UserTopicFeatureLevel is the first server feature level with
+// POST /user_topics, added in Zulip 7.0. It deprecates
+// PATCH /users/me/subscriptions/muted_topics, which knows only whether a topic
+// is muted, and which upstream says may be removed in a future release.
+const UserTopicFeatureLevel = 170
+
+// FollowedTopicFeatureLevel is the first server feature level that understands
+// the followed visibility policy, added later in the same Zulip 7.0 series.
+const FollowedTopicFeatureLevel = 219
+
+// UpdateUserTopicRequest represents a change to the caller's own preferences
+// for one topic.
+type UpdateUserTopicRequest struct {
+	StreamID         int                         `json:"stream_id"`
+	Topic            string                      `json:"topic"`
+	VisibilityPolicy types.TopicVisibilityPolicy `json:"visibility_policy"`
 }
 
-// MuteTopic mutes or unmutes a topic
-func (c *Client) MuteTopic(req MuteTopicRequest) (*types.Response, error) {
+// UpdateUserTopic sets the caller's visibility policy for a topic. Servers
+// from feature level 170 get POST /user_topics; older ones fall back to the
+// endpoint it deprecates, which can only mute and unmute.
+func (c *Client) UpdateUserTopic(req UpdateUserTopicRequest) (*types.Response, error) {
+	level, err := c.FeatureLevel()
+	if err != nil {
+		return nil, err
+	}
+	if level < UserTopicFeatureLevel {
+		return c.updateUserTopicByMuting(req)
+	}
+	if req.VisibilityPolicy == types.VisibilityFollowed && level < FollowedTopicFeatureLevel {
+		return nil, fmt.Errorf(
+			"this server, at feature level %d, cannot follow topics: that needs feature level %d",
+			level, FollowedTopicFeatureLevel)
+	}
+
 	params := map[string]interface{}{
-		"stream": req.Stream,
-		"topic":  req.Topic,
-		"op":     req.Op,
+		"stream_id":         req.StreamID,
+		"topic":             req.Topic,
+		"visibility_policy": int(req.VisibilityPolicy),
+	}
+
+	body, err := c.Post("user_topics", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp types.Response
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// updateUserTopicByMuting sets a visibility policy the way every client had to
+// before feature level 170. That endpoint is binary, so the policies that
+// arrived with POST /user_topics have nothing here to fall back to.
+func (c *Client) updateUserTopicByMuting(req UpdateUserTopicRequest) (*types.Response, error) {
+	var op string
+	switch req.VisibilityPolicy {
+	case types.VisibilityMuted:
+		op = "add"
+	case types.VisibilityInherit:
+		op = "remove"
+	default:
+		return nil, fmt.Errorf(
+			"this server, below feature level %d, cannot set the %s visibility policy: it can only mute and unmute topics",
+			UserTopicFeatureLevel, req.VisibilityPolicy)
+	}
+
+	params := map[string]interface{}{
+		"stream_id": req.StreamID,
+		"topic":     req.Topic,
+		"op":        op,
 	}
 
 	body, err := c.Patch("users/me/subscriptions/muted_topics", params)

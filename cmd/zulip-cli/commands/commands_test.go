@@ -239,6 +239,11 @@ func TestUsageErrorsHappenBeforeAnyRequest(t *testing.T) {
 			want: "either --new-channel-id or --new-topic",
 		},
 		{
+			name: "an unknown visibility policy is refused",
+			args: []string{"set-topic-visibility", "42", "off-topic", "hidden"},
+			want: "unknown visibility policy",
+		},
+		{
 			name: "unsupported output formats are refused",
 			args: []string{"list-channels", "-o", "yaml"},
 			want: "unsupported output format",
@@ -406,5 +411,82 @@ func TestUpdateChannelSetsWhoMayPost(t *testing.T) {
 	want := url.Values{"can_send_message_group": {`{"new":15}`}}
 	if !reflect.DeepEqual(params, want) {
 		t.Errorf("parameters = %v, want %v", params, want)
+	}
+}
+
+// The topic commands are shorthand for a visibility policy, and take a channel
+// by name as well as by ID.
+func TestTopicVisibilityCommands(t *testing.T) {
+	cases := []struct {
+		name       string
+		args       []string
+		wantCalls  int
+		wantPolicy string
+	}{
+		{
+			name:       "mute-topic mutes",
+			args:       []string{"mute-topic", "42", "off-topic"},
+			wantCalls:  2,
+			wantPolicy: "1",
+		},
+		{
+			name:       "unmute-topic clears the policy",
+			args:       []string{"unmute-topic", "42", "off-topic"},
+			wantCalls:  2,
+			wantPolicy: "0",
+		},
+		{
+			name:       "follow-topic follows",
+			args:       []string{"follow-topic", "42", "off-topic"},
+			wantCalls:  2,
+			wantPolicy: "3",
+		},
+		{
+			name:       "unfollow-topic clears the policy",
+			args:       []string{"unfollow-topic", "42", "off-topic"},
+			wantCalls:  2,
+			wantPolicy: "0",
+		},
+		{
+			name:       "set-topic-visibility takes the policy by name",
+			args:       []string{"set-topic-visibility", "42", "off-topic", "unmuted"},
+			wantCalls:  2,
+			wantPolicy: "2",
+		},
+		{
+			name:       "a channel name is looked up first",
+			args:       []string{"mute-topic", "general", "off-topic"},
+			wantCalls:  3,
+			wantPolicy: "1",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newRoutedFakeZulip(t, map[string]string{
+				"/api/v1/server_settings": `{"result":"success","zulip_feature_level":509}`,
+				"/api/v1/get_stream_id":   `{"result":"success","stream_id":42}`,
+			})
+
+			if _, err := run(t, tc.args...); err != nil {
+				t.Fatalf("%v: %v", tc.args, err)
+			}
+
+			method, path, params, calls := fake.snapshot()
+			if calls != tc.wantCalls {
+				t.Fatalf("made %d requests, want %d", calls, tc.wantCalls)
+			}
+			if method != "POST" || path != "/api/v1/user_topics" {
+				t.Fatalf("%s %s, want POST /api/v1/user_topics", method, path)
+			}
+			want := url.Values{
+				"stream_id":         {"42"},
+				"topic":             {"off-topic"},
+				"visibility_policy": {tc.wantPolicy},
+			}
+			if !reflect.DeepEqual(params, want) {
+				t.Errorf("parameters = %v, want %v", params, want)
+			}
+		})
 	}
 }

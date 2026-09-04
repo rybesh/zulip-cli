@@ -186,12 +186,40 @@ zulip-cli list-subscriptions
 # List only the channels you are subscribed to
 zulip-cli list-channels --include-public=false
 
-# Mute a topic
-zulip-cli mute-topic --channel general --topic "off-topic"
+# Mute a topic, by channel name or by channel ID
+zulip-cli mute-topic general "off-topic"
+zulip-cli unmute-topic 42 "off-topic"
+
+# Follow a topic
+zulip-cli follow-topic general "release planning"
+zulip-cli unfollow-topic general "release planning"
+
+# Set any visibility policy: inherit, muted, unmuted, or followed
+zulip-cli set-topic-visibility general "off-topic" unmuted
 
 # Move topic to another channel
 zulip-cli move-topic --channel-id 42 --new-channel-id 43 --topic "old-name"
 ```
+
+#### Topic visibility
+
+Your personal preference for a topic is one of four policies:
+
+- `inherit` — no policy of its own; the topic follows its channel. Also
+  spelled `none`.
+- `muted` — hide the topic.
+- `unmuted` — show the topic even though its channel is muted.
+- `followed` — follow the topic.
+
+`mute-topic`, `unmute-topic`, `follow-topic` and `unfollow-topic` are shorthand
+for `set-topic-visibility` with the matching policy; unmuting and unfollowing
+both clear the policy, which is what the server does either way.
+
+These commands use `POST /user_topics`, added in feature level 170. Servers
+older than that fall back to the endpoint it deprecates, which can only mute and
+unmute — `unmuted` and `followed` are refused there rather than being turned
+into the nearest thing it understands. `followed` itself needs feature level
+219.
 
 #### Channel permissions
 

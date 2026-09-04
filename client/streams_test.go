@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/rybesh/zulip-cli/types"
@@ -153,5 +154,118 @@ func TestGroupSettingRoundTrip(t *testing.T) {
 		if string(back) != tc.wire {
 			t.Errorf("marshal %+v = %s, want %s", got, back, tc.wire)
 		}
+	}
+}
+
+// A current server gets POST /user_topics, which carries the policy the caller
+// asked for rather than a mute flag.
+func TestUpdateUserTopicUsesTheCurrentEndpoint(t *testing.T) {
+	c, rec := testRoutedServer(t, serverSettings(509))
+
+	if _, err := c.UpdateUserTopic(UpdateUserTopicRequest{
+		StreamID:         42,
+		Topic:            "off-topic",
+		VisibilityPolicy: types.VisibilityFollowed,
+	}); err != nil {
+		t.Fatalf("UpdateUserTopic: %v", err)
+	}
+
+	method, path, params, _ := rec.snapshot()
+	if method != "POST" || path != "/api/v1/user_topics" {
+		t.Fatalf("%s %s, want POST /api/v1/user_topics", method, path)
+	}
+	want := url.Values{
+		"stream_id":         {"42"},
+		"topic":             {"off-topic"},
+		"visibility_policy": {"3"},
+	}
+	if !reflect.DeepEqual(params, want) {
+		t.Errorf("parameters = %v, want %v", params, want)
+	}
+}
+
+// A server too old for POST /user_topics still mutes and unmutes, through the
+// endpoint that one deprecates.
+func TestUpdateUserTopicFallsBackToMuting(t *testing.T) {
+	cases := []struct {
+		policy types.TopicVisibilityPolicy
+		wantOp string
+	}{
+		{types.VisibilityMuted, "add"},
+		{types.VisibilityInherit, "remove"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.policy.String(), func(t *testing.T) {
+			c, rec := testRoutedServer(t, serverSettings(UserTopicFeatureLevel-1))
+
+			if _, err := c.UpdateUserTopic(UpdateUserTopicRequest{
+				StreamID:         42,
+				Topic:            "off-topic",
+				VisibilityPolicy: tc.policy,
+			}); err != nil {
+				t.Fatalf("UpdateUserTopic: %v", err)
+			}
+
+			method, path, params, _ := rec.snapshot()
+			if method != "PATCH" || path != "/api/v1/users/me/subscriptions/muted_topics" {
+				t.Fatalf("%s %s, want PATCH /api/v1/users/me/subscriptions/muted_topics",
+					method, path)
+			}
+			want := url.Values{
+				"stream_id": {"42"},
+				"topic":     {"off-topic"},
+				"op":        {tc.wantOp},
+			}
+			if !reflect.DeepEqual(params, want) {
+				t.Errorf("parameters = %v, want %v", params, want)
+			}
+		})
+	}
+}
+
+// A policy the server has no way to set is refused, rather than quietly turned
+// into the nearest thing the old endpoint understands.
+func TestUpdateUserTopicRefusesPoliciesTheServerLacks(t *testing.T) {
+	cases := []struct {
+		name   string
+		level  int
+		policy types.TopicVisibilityPolicy
+		want   string
+	}{
+		{
+			name:   "unmuted needs the current endpoint",
+			level:  UserTopicFeatureLevel - 1,
+			policy: types.VisibilityUnmuted,
+			want:   "can only mute and unmute",
+		},
+		{
+			name:   "followed needs the current endpoint",
+			level:  UserTopicFeatureLevel - 1,
+			policy: types.VisibilityFollowed,
+			want:   "can only mute and unmute",
+		},
+		{
+			name:   "followed arrived after the endpoint did",
+			level:  FollowedTopicFeatureLevel - 1,
+			policy: types.VisibilityFollowed,
+			want:   "cannot follow topics",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, rec := testRoutedServer(t, serverSettings(tc.level))
+
+			_, err := c.UpdateUserTopic(UpdateUserTopicRequest{
+				StreamID: 42, Topic: "off-topic", VisibilityPolicy: tc.policy,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want one mentioning %q", err, tc.want)
+			}
+			if _, _, _, calls := rec.snapshot(); calls != 1 {
+				t.Errorf("made %d requests, want only the feature-level check", calls)
+			}
+		})
 	}
 }

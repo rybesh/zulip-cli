@@ -120,20 +120,43 @@ zulip-cli send-message --to alice@example.com,bob@example.com -c "Meeting at 3pm
 # Get messages from a channel/topic
 zulip-cli get-messages --channel engineering --topic "deployments" --num-before 20
 
+# Filter by anything else the server understands
+zulip-cli get-messages --narrow sender=alice@example.com --narrow is=unread
+
+# Get the Markdown people typed, instead of the rendered HTML
+zulip-cli get-messages --channel engineering --no-markdown
+zulip-cli get-raw-message 12345
+
+# Walk the whole history, a page at a time
+zulip-cli get-messages --channel engineering --all --num-before 200
+
 # Update a message
 zulip-cli update-message 12345 --content "Updated text"
 
-# Change message topic
-zulip-cli update-message 12345 --topic "New Topic"
+# Rename a whole thread, not just one message
+zulip-cli update-message 12345 --topic "New Topic" --propagate-mode change_all
+
+# Move one message to another channel
+zulip-cli update-message 12345 --channel-id 43
 
 # Delete a message
 zulip-cli delete-message 12345
 
-# Add emoji reaction
+# Add emoji reaction, by name or by code
 zulip-cli add-reaction 12345 thumbs_up
+zulip-cli add-reaction 12345 --emoji-code 7 --reaction-type realm_emoji
 
-# Upload a file
+# Mark specific messages read, unread, or starred
+zulip-cli update-message-flags add read 12345 12346
+zulip-cli update-message-flags remove read 12345
+zulip-cli update-message-flags add starred 12345
+
+# Upload a file, and list what you have uploaded
 zulip-cli upload-file document.pdf
+zulip-cli list-attachments
+
+# Check what Markdown will look like without sending it
+zulip-cli render-message "**hello** :tada:"
 
 # Mark all messages as read
 zulip-cli mark-all-as-read
@@ -141,6 +164,45 @@ zulip-cli mark-all-as-read
 # Get message edit history
 zulip-cli get-message-history 12345
 ```
+
+#### Narrowing
+
+`get-messages` and `check-messages-match-narrow` take `--narrow
+operator=operand`, repeatable, which reaches every filter the server
+understands — not just the ones this CLI has heard of:
+
+```bash
+zulip-cli get-messages --narrow sender=alice@example.com
+zulip-cli get-messages --narrow is=unread --narrow has=link
+zulip-cli get-messages --narrow search="release notes"
+zulip-cli get-messages --narrow dm=bob@example.com
+```
+
+`--channel` and `--topic` are shorthand for the two operators people reach for
+most, and combine with `--narrow` rather than replacing it. Operands keep their
+commas, so a search phrase stays one filter.
+
+`check-messages-match-narrow` answers which of some messages match a narrow,
+without fetching them:
+
+```bash
+zulip-cli check-messages-match-narrow 12345 12346 --narrow has=link
+```
+
+#### Message content and Markdown
+
+Zulip renders message content to HTML by default. `--no-markdown` on
+`get-messages` asks for the Markdown the sender typed instead, and
+`get-raw-message` does the same for a single message. `--no-markdown=false`
+asks for HTML explicitly, which is the server's default either way.
+
+#### Paging through history
+
+One `get-messages` request returns at most a page. `--all` keeps asking for
+older messages, `--num-before` at a time, until the server says the history has
+run out, and prints one merged result — so walking a channel's history no
+longer means re-anchoring by hand on the oldest ID and watching `found_oldest`.
+It walks backwards only, so it cannot be combined with `--num-after`.
 
 ### Channels
 
@@ -168,6 +230,14 @@ zulip-cli create-channel announcements \
 # Update channel settings
 zulip-cli update-channel 42 --description "New description"
 
+# Make a channel private, or public again
+zulip-cli update-channel 42 --invite-only --history-public-to-subscribers
+zulip-cli update-channel 42 --invite-only=false
+
+# Change how long a channel keeps messages
+zulip-cli update-channel 42 --message-retention-days 30
+zulip-cli update-channel 42 --message-retention-days unlimited
+
 # Change who may post in a channel
 zulip-cli update-channel 42 --can-send-message-group role:moderators
 
@@ -177,14 +247,31 @@ zulip-cli delete-channel 42
 # Subscribe to channels
 zulip-cli subscribe engineering design product
 
-# Unsubscribe from channels
+# Subscribe other people, by ID or by email
+zulip-cli subscribe engineering --principals 17,alice@example.com
+
+# Unsubscribe from channels, yourself or others
 zulip-cli unsubscribe random
+zulip-cli unsubscribe random --principals alice@example.com
+
+# Check whether someone is subscribed
+zulip-cli get-subscription-status alice@example.com engineering
 
 # List your subscriptions
 zulip-cli list-subscriptions
 
 # List only the channels you are subscribed to
 zulip-cli list-channels --include-public=false
+
+# Change your own settings for a channel
+zulip-cli update-subscription engineering --color "#76ce90" --pin-to-top
+zulip-cli update-subscription engineering --is-muted=false
+
+# Get the address that emails messages into a channel
+zulip-cli get-channel-email-address engineering
+
+# Subscribe new users to a channel automatically
+zulip-cli add-default-channel engineering
 
 # Mute a topic, by channel name or by channel ID
 zulip-cli mute-topic general "off-topic"
@@ -198,8 +285,26 @@ zulip-cli unfollow-topic general "release planning"
 zulip-cli set-topic-visibility general "off-topic" unmuted
 
 # Move topic to another channel
-zulip-cli move-topic --channel-id 42 --new-channel-id 43 --topic "old-name"
+zulip-cli move-topic 42 "old-name" --new-channel-id 43
 ```
+
+#### Channel settings and your own settings
+
+`update-channel` changes the channel, for everyone. `update-subscription`
+changes your own preferences for it — its colour, whether it is pinned or
+muted, and which notifications it sends — and changes nothing for anyone else.
+
+`--invite-only`, `--is-web-public` and `--history-public-to-subscribers` are
+tri-state on `update-channel`: leaving one out changes nothing, and
+`--invite-only=false` makes a private channel public rather than being read as
+"leave it alone". Changing a channel's privacy may also need
+`--history-public-to-subscribers`, since the server decides what happens to the
+existing history from the two together.
+
+`subscribe` and `unsubscribe` act on you unless `--principals` names other
+people, by user ID or email address. Subscribing someone you may not add fails
+the whole request; `--authorization-errors-fatal=false` subscribes everyone
+allowed instead and reports the rest under `unauthorized`.
 
 #### Topic visibility
 
@@ -257,12 +362,29 @@ zulip-cli create-user user@example.com "Full Name"
 # Update user
 zulip-cli update-user 123 --full-name "New Name"
 
-# Get user presence
+# Set custom profile fields, by field ID
+zulip-cli update-user 123 --profile-data 4=Berlin --profile-data 6="Team lead"
+
+# Get user presence, for one user or everyone
 zulip-cli get-user-presence 123
+zulip-cli list-presence
 
 # Update your presence
 zulip-cli update-presence active
+
+# Tell people you are typing
+zulip-cli set-typing-status start --to alice@example.com
+zulip-cli set-typing-status stop --channel general --topic standup
+
+# Change your account-wide notification settings
+zulip-cli update-notification-settings --channel-desktop=false --offline-push
 ```
+
+The field IDs `--profile-data` takes are the ones `list-profile-fields`
+reports. Notification flags are tri-state, like the channel privacy settings:
+leaving one out changes nothing, and `--flag=false` turns that notification
+off. `update-notification-settings` is your whole account;
+`update-subscription` is one channel.
 
 ### Other Commands
 
@@ -287,7 +409,31 @@ zulip-cli add-alert-words "urgent" "asap" "critical"
 # Manage user groups
 zulip-cli list-user-groups
 zulip-cli create-user-group "Engineering" --description "Engineering team"
+
+# Manage linkifiers, which turn patterns in messages into links
+zulip-cli list-linkifiers
+zulip-cli add-linkifier '#(?P<id>[0-9]+)' 'https://example.com/issues/{id}'
+zulip-cli remove-linkifier 7
+
+# Manage custom profile fields
+zulip-cli list-profile-fields
+zulip-cli create-profile-field Location --field-type 1 --hint "Where you work"
+zulip-cli update-profile-field 4 --hint "City you work from"
+zulip-cli reorder-profile-fields 6 4 5
+zulip-cli delete-profile-field 4
+
+# Read and write this bot's stored state
+zulip-cli get-storage
+zulip-cli update-storage last-seen=1717171717 greeting="hello there"
+
+# Release an event queue a killed listener left behind
+zulip-cli deregister 1518familiar
 ```
+
+Bot storage belongs to the bot whose credentials are in the environment, so a
+human account has none. `listen` releases its own queue when stopped with
+Ctrl-C; `deregister` is for the queues left by a listener that was killed
+outright.
 
 ## JSON Output & jq Examples
 

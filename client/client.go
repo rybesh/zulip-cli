@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rybesh/zulip-cli/types"
@@ -45,6 +46,11 @@ type Client struct {
 	// parameters the server ignored. Nil writes them to stderr; set it to a
 	// no-op to silence them.
 	Warnf func(format string, args ...interface{})
+
+	// The server's feature level, looked up once by FeatureLevel.
+	featureLevelOnce sync.Once
+	featureLevel     int
+	featureLevelErr  error
 }
 
 // warnf reports a problem that did not fail the request.
@@ -423,6 +429,21 @@ func (c *Client) Delete(endpoint string, params map[string]interface{}) ([]byte,
 // PostWithFiles performs a POST request with file uploads
 func (c *Client) PostWithFiles(endpoint string, params map[string]interface{}, files map[string]FormFile) ([]byte, error) {
 	return c.doRequest("POST", endpoint, params, files)
+}
+
+// FeatureLevel reports the server's zulip_feature_level, which says which API
+// changes it has. Server settings are fetched at most once per client, since
+// the answer cannot change without a restart of the server.
+func (c *Client) FeatureLevel() (int, error) {
+	c.featureLevelOnce.Do(func() {
+		settings, err := c.GetServerSettings()
+		if err != nil {
+			c.featureLevelErr = fmt.Errorf("failed to read the server's feature level: %w", err)
+			return
+		}
+		c.featureLevel = settings.ZulipFeatureLevel
+	})
+	return c.featureLevel, c.featureLevelErr
 }
 
 // GetServerSettings fetches server settings

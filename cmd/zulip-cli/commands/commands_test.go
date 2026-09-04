@@ -29,6 +29,14 @@ type fakeZulip struct {
 
 func newFakeZulip(t *testing.T, body string) *fakeZulip {
 	t.Helper()
+	return newRoutedFakeZulip(t, map[string]string{"": body})
+}
+
+// newRoutedFakeZulip answers each endpoint with the body mapped to its path,
+// and with the body under "" for anything else. Commands that look something up
+// before acting need more than one canned answer.
+func newRoutedFakeZulip(t *testing.T, bodies map[string]string) *fakeZulip {
+	t.Helper()
 	f := &fakeZulip{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +45,13 @@ func newFakeZulip(t *testing.T, body string) *fakeZulip {
 		f.method, f.path, f.params = r.Method, r.URL.Path, r.Form
 		f.calls++
 		f.mu.Unlock()
+		body, found := bodies[r.URL.Path]
+		if !found {
+			body = bodies[""]
+		}
+		if body == "" {
+			body = `{"result":"success"}`
+		}
 		fmt.Fprint(w, body)
 	}))
 	t.Cleanup(srv.Close)
@@ -196,7 +211,7 @@ func TestUsageErrorsHappenBeforeAnyRequest(t *testing.T) {
 		{
 			name: "update-channel needs something to change",
 			args: []string{"update-channel", "42"},
-			want: "either --description or --new-name",
+			want: "nothing to change",
 		},
 		{
 			name: "update-user-group needs something to change",
@@ -314,6 +329,81 @@ func TestMoveTopicUsesTheLatestMessage(t *testing.T) {
 		t.Errorf("%s %s, want PATCH /api/v1/messages/99", method, path)
 	}
 	want := url.Values{"stream_id": {"43"}, "propagate_mode": {"change_all"}}
+	if !reflect.DeepEqual(params, want) {
+		t.Errorf("parameters = %v, want %v", params, want)
+	}
+}
+
+// create-channel takes group names as well as IDs, and reaches the endpoint
+// that can actually apply the settings.
+func TestCreateChannelResolvesGroupNames(t *testing.T) {
+	fake := newRoutedFakeZulip(t, map[string]string{
+		"/api/v1/server_settings": `{"result":"success","zulip_feature_level":509}`,
+		"/api/v1/users/me":        `{"result":"success","user_id":8}`,
+		"/api/v1/user_groups": `{"result":"success","user_groups":[` +
+			`{"id":3,"name":"role:administrators"},{"id":4,"name":"engineering"}]}`,
+	})
+
+	if _, err := run(t, "create-channel", "music",
+		"--can-send-message-group", "role:administrators",
+		"--can-administer-channel-group", "4",
+		"--topics-policy", "allow_empty_topic",
+		"--message-retention-days", "unlimited",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	method, path, params, _ := fake.snapshot()
+	if method != "POST" || path != "/api/v1/channels/create" {
+		t.Fatalf("%s %s, want POST /api/v1/channels/create", method, path)
+	}
+	want := url.Values{
+		"name":                         {"music"},
+		"subscribers":                  {"[8]"},
+		"can_send_message_group":       {"3"},
+		"can_administer_channel_group": {"4"},
+		"topics_policy":                {"allow_empty_topic"},
+		"message_retention_days":       {`"unlimited"`},
+	}
+	if !reflect.DeepEqual(params, want) {
+		t.Errorf("parameters = %v, want %v", params, want)
+	}
+}
+
+// A group name the server does not have is the user's mistake, and no channel
+// should be created because of it.
+func TestCreateChannelRefusesAnUnknownGroup(t *testing.T) {
+	fake := newRoutedFakeZulip(t, map[string]string{
+		"/api/v1/server_settings": `{"result":"success","zulip_feature_level":509}`,
+		"/api/v1/user_groups":     `{"result":"success","user_groups":[]}`,
+	})
+
+	_, err := run(t, "create-channel", "music", "--can-send-message-group", "nobody")
+	if err == nil || !strings.Contains(err.Error(), `no user group named "nobody"`) {
+		t.Fatalf("error = %v, want one naming the missing group", err)
+	}
+	if _, path, _, _ := fake.snapshot(); path == "/api/v1/channels/create" {
+		t.Error("the channel was created anyway")
+	}
+}
+
+// update-channel sends who may post as a group-setting update, which is what
+// replaced the stream_post_policy the server dropped.
+func TestUpdateChannelSetsWhoMayPost(t *testing.T) {
+	fake := newFakeZulip(t, `{"result":"success"}`)
+
+	if _, err := run(t, "update-channel", "42", "--can-send-message-group", "15"); err != nil {
+		t.Fatal(err)
+	}
+
+	method, path, params, calls := fake.snapshot()
+	if calls != 1 {
+		t.Fatalf("made %d requests, want 1: a group ID needs no lookup", calls)
+	}
+	if method != "PATCH" || path != "/api/v1/streams/42" {
+		t.Fatalf("%s %s, want PATCH /api/v1/streams/42", method, path)
+	}
+	want := url.Values{"can_send_message_group": {`{"new":15}`}}
 	if !reflect.DeepEqual(params, want) {
 		t.Errorf("parameters = %v, want %v", params, want)
 	}

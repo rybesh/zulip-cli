@@ -159,8 +159,17 @@ zulip-cli get-channel "general"
 # Create a channel
 zulip-cli create-channel engineering --description "Engineering discussions"
 
+# Create a channel with other people in it, and settings applied up front
+zulip-cli create-channel announcements \
+    --subscribers alice@example.com,17 \
+    --can-send-message-group role:administrators \
+    --invite-only
+
 # Update channel settings
 zulip-cli update-channel 42 --description "New description"
+
+# Change who may post in a channel
+zulip-cli update-channel 42 --can-send-message-group role:moderators
 
 # Delete a channel
 zulip-cli delete-channel 42
@@ -183,6 +192,24 @@ zulip-cli mute-topic --channel general --topic "off-topic"
 # Move topic to another channel
 zulip-cli move-topic --channel-id 42 --new-channel-id 43 --topic "old-name"
 ```
+
+#### Channel permissions
+
+Every `--can-*-group` flag takes a user group: an ID from `list-user-groups`, or
+a name — including the `role:` system groups every organization has, such as
+`role:everyone`, `role:members`, `role:moderators`, `role:administrators`, and
+`role:nobody`. Run `create-channel --help` for the full list of permissions.
+
+`--can-send-message-group` replaces the `stream_post_policy` setting Zulip
+removed in feature level 333. Channels still report a `stream_post_policy` and an
+`is_announcement_only` in responses, but since that removal the server computes
+them from `can_send_message_group` as the nearest enclosing role, so they are an
+approximation of who may post rather than the setting itself.
+
+`create-channel` uses `POST /channels/create` on servers from feature level 417,
+and creates the channel by subscribing to it on older ones. Both accept the same
+settings, so the choice only shows in the response: the newer endpoint reports
+the new channel's `id`, the older one reports who was subscribed.
 
 ### Users
 

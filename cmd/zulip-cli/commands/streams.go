@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/rybesh/zulip-cli/client"
+	"github.com/rybesh/zulip-cli/types"
 	"github.com/spf13/cobra"
 )
 
@@ -49,20 +50,26 @@ var createStreamCmd = &cobra.Command{
 	Short:   "Create a new channel",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		description, _ := cmd.Flags().GetString("description")
-
-		req := client.CreateStreamRequest{
-			Subscriptions: []struct {
-				Name        string `json:"name"`
-				Description string `json:"description,omitempty"`
-			}{
-				{Name: args[0], Description: description},
-			},
-			InviteOnly: boolFlag(cmd, "invite-only"),
-			Announce:   boolFlag(cmd, "announce"),
+		settings, err := channelSettings(cmd, &groupResolver{client: zulipClient})
+		if err != nil {
+			return err
 		}
 
-		resp, err := zulipClient.CreateStream(req)
+		req := client.CreateChannelRequest{
+			Name:            args[0],
+			Description:     stringFlag(cmd, "description"),
+			Announce:        boolFlag(cmd, "announce"),
+			ChannelSettings: settings,
+		}
+
+		if subscribers, _ := cmd.Flags().GetStringSlice("subscribers"); len(subscribers) > 0 {
+			req.Subscribers, err = resolveUserIDs(zulipClient, subscribers)
+			if err != nil {
+				return err
+			}
+		}
+
+		resp, err := zulipClient.CreateChannel(req)
 		if err != nil {
 			return err
 		}
@@ -84,15 +91,24 @@ var updateStreamCmd = &cobra.Command{
 
 		description := stringFlag(cmd, "description")
 		newName := stringFlag(cmd, "new-name")
+		postingGroup := stringFlag(cmd, "can-send-message-group")
 
-		if description == nil && newName == nil {
-			return fmt.Errorf("either --description or --new-name is required")
+		if description == nil && newName == nil && postingGroup == nil {
+			return fmt.Errorf("nothing to change: pass --description, --new-name, or --can-send-message-group")
 		}
 
 		req := client.UpdateStreamRequest{
 			StreamID:    streamID,
 			Description: description,
 			NewName:     newName,
+		}
+
+		if postingGroup != nil {
+			group, err := (&groupResolver{client: zulipClient}).resolve(*postingGroup)
+			if err != nil {
+				return fmt.Errorf("--can-send-message-group: %w", err)
+			}
+			req.CanSendMessageGroup = group
 		}
 
 		resp, err := zulipClient.UpdateStream(req)
@@ -151,16 +167,11 @@ var subscribeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
 
-		var subscriptions []struct {
-			Name        string `json:"name"`
-			Description string `json:"description,omitempty"`
-		}
-
+		var subscriptions []client.ChannelSubscription
 		for _, name := range args {
-			subscriptions = append(subscriptions, struct {
-				Name        string `json:"name"`
-				Description string `json:"description,omitempty"`
-			}{Name: name, Description: description})
+			subscriptions = append(subscriptions, client.ChannelSubscription{
+				Name: name, Description: description,
+			})
 		}
 
 		req := client.SubscribeRequest{
@@ -311,11 +322,15 @@ func init() {
 	listStreamsCmd.Flags().Bool("include-all-active", false, "Include all active channels (admins only)")
 
 	createStreamCmd.Flags().String("description", "", "Channel description")
-	createStreamCmd.Flags().Bool("invite-only", false, "Make channel private")
 	createStreamCmd.Flags().Bool("announce", false, "Announce channel creation")
+	createStreamCmd.Flags().StringSlice("subscribers", nil,
+		"User IDs or email addresses to subscribe (default: just you)")
+	addChannelSettingFlags(createStreamCmd)
 
 	updateStreamCmd.Flags().String("description", "", "New description")
 	updateStreamCmd.Flags().String("new-name", "", "New name")
+	updateStreamCmd.Flags().String("can-send-message-group", "",
+		"Who may post in the channel"+groupFlagHelp)
 
 	subscribeCmd.Flags().String("description", "", "Channel description (for new channels)")
 
@@ -323,4 +338,159 @@ func init() {
 
 	moveTopicCmd.Flags().Int("new-channel-id", 0, "New channel ID (formerly --new-stream-id)")
 	moveTopicCmd.Flags().String("new-topic", "", "New topic name")
+}
+
+// channelPermissionFlags are the group-setting flags that configure who may do
+// what in a channel. Each names the flag and the ChannelSettings field it
+// fills; keeping them in one table is what lets create-channel offer the whole
+// family without a dozen near-identical blocks.
+var channelPermissionFlags = []struct {
+	name  string
+	help  string
+	field func(*client.ChannelSettings) **types.GroupSetting
+}{
+	{"can-add-subscribers-group", "Who may add subscribers to the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanAddSubscribersGroup }},
+	{"can-administer-channel-group", "Who may administer the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanAdministerChannelGroup }},
+	{"can-create-topic-group", "Who may start a new topic in the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanCreateTopicGroup }},
+	{"can-delete-any-message-group", "Who may delete any message in the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanDeleteAnyMessageGroup }},
+	{"can-delete-own-message-group", "Who may delete their own messages in the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanDeleteOwnMessageGroup }},
+	{"can-move-messages-out-of-channel-group", "Who may move messages to another channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanMoveMessagesOutOfChannelGroup }},
+	{"can-move-messages-within-channel-group", "Who may move messages between topics",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanMoveMessagesWithinChannelGroup }},
+	{"can-remove-subscribers-group", "Who may remove subscribers from the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanRemoveSubscribersGroup }},
+	{"can-resolve-topics-group", "Who may resolve topics in the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanResolveTopicsGroup }},
+	{"can-send-message-group", "Who may post in the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanSendMessageGroup }},
+	{"can-subscribe-group", "Who may subscribe themselves to the channel",
+		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanSubscribeGroup }},
+}
+
+// groupFlagHelp explains what a group-setting flag accepts. The role:* groups
+// are the system groups every organization has.
+const groupFlagHelp = " (user group ID or name, such as role:administrators)"
+
+// addChannelSettingFlags registers the settings a channel can be created with.
+func addChannelSettingFlags(cmd *cobra.Command) {
+	cmd.Flags().Bool("invite-only", false, "Make the channel private")
+	cmd.Flags().Bool("is-web-public", false, "Make the channel readable by anyone on the internet")
+	cmd.Flags().Bool("is-default-channel", false, "Subscribe new users to the channel automatically")
+	cmd.Flags().Bool("history-public-to-subscribers", false, "Share history with users who subscribe later")
+	cmd.Flags().Bool("default-push-notifications", false, "Enable mobile push notifications by default")
+	cmd.Flags().String("message-retention-days", "",
+		`Days to keep messages, or "realm_default" or "unlimited"`)
+	cmd.Flags().Int("folder-id", 0, "Channel folder to file the channel under")
+	cmd.Flags().String("topics-policy", "",
+		`Topics allowed: inherit, allow_empty_topic, disable_empty_topic, or empty_topic_only`)
+
+	for _, permission := range channelPermissionFlags {
+		cmd.Flags().String(permission.name, "", permission.help+groupFlagHelp)
+	}
+}
+
+// channelSettings reads the settings flags the user actually set. Group names
+// are resolved against the server, so nothing is sent until every flag makes
+// sense.
+func channelSettings(cmd *cobra.Command, groups *groupResolver) (client.ChannelSettings, error) {
+	settings := client.ChannelSettings{
+		InviteOnly:                 boolFlag(cmd, "invite-only"),
+		IsWebPublic:                boolFlag(cmd, "is-web-public"),
+		IsDefaultStream:            boolFlag(cmd, "is-default-channel"),
+		HistoryPublicToSubscribers: boolFlag(cmd, "history-public-to-subscribers"),
+		DefaultPushNotifications:   boolFlag(cmd, "default-push-notifications"),
+		FolderID:                   intFlag(cmd, "folder-id"),
+		TopicsPolicy:               stringFlag(cmd, "topics-policy"),
+	}
+
+	if days := stringFlag(cmd, "message-retention-days"); days != nil {
+		settings.MessageRetentionDays = client.RetentionDays(*days)
+	}
+
+	for _, permission := range channelPermissionFlags {
+		value := stringFlag(cmd, permission.name)
+		if value == nil {
+			continue
+		}
+		group, err := groups.resolve(*value)
+		if err != nil {
+			return settings, fmt.Errorf("--%s: %w", permission.name, err)
+		}
+		*permission.field(&settings) = group
+	}
+
+	return settings, nil
+}
+
+// groupResolver turns what the user typed for a group-setting flag — a user
+// group ID, or a group name such as role:administrators — into a value the
+// server understands. Names cost one lookup, however many flags need them.
+type groupResolver struct {
+	client *client.Client
+	byName map[string]int
+}
+
+func (r *groupResolver) resolve(value string) (*types.GroupSetting, error) {
+	if id, err := strconv.Atoi(value); err == nil {
+		return types.NamedGroup(id), nil
+	}
+
+	if r.byName == nil {
+		resp, err := r.client.GetUserGroups()
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up user group %q: %w", value, err)
+		}
+		r.byName = make(map[string]int, len(resp.UserGroups))
+		for _, group := range resp.UserGroups {
+			r.byName[group.Name] = group.ID
+		}
+	}
+
+	id, found := r.byName[value]
+	if !found {
+		return nil, fmt.Errorf("no user group named %q; pass a group ID or a name from list-user-groups", value)
+	}
+	return types.NamedGroup(id), nil
+}
+
+// resolveUserIDs turns user IDs and email addresses into the user IDs the
+// server wants. Emails cost one lookup of the user list, however many there are.
+func resolveUserIDs(c *client.Client, values []string) ([]int, error) {
+	ids := make([]int, 0, len(values))
+	var byEmail map[string]int
+
+	for _, value := range values {
+		if id, err := strconv.Atoi(value); err == nil {
+			ids = append(ids, id)
+			continue
+		}
+
+		if byEmail == nil {
+			resp, err := c.GetUsers(client.GetUsersRequest{})
+			if err != nil {
+				return nil, fmt.Errorf("failed to look up user %q: %w", value, err)
+			}
+			byEmail = make(map[string]int, len(resp.Members))
+			for _, user := range resp.Members {
+				byEmail[user.Email] = user.UserID
+				if user.DeliveryEmail != "" {
+					byEmail[user.DeliveryEmail] = user.UserID
+				}
+			}
+		}
+
+		id, found := byEmail[value]
+		if !found {
+			return nil, fmt.Errorf("no user with email %q; pass a user ID or an address from list-users", value)
+		}
+		ids = append(ids, id)
+	}
+
+	return ids, nil
 }

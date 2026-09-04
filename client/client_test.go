@@ -69,6 +69,24 @@ func testServer(t *testing.T, body string) (*Client, *recorder) {
 	return testClient(t, Config{URL: srv.URL}), rec
 }
 
+// testRoutedServer answers each endpoint with the body mapped to its path, and
+// a bare success for anything else. A flow that has to ask the server something
+// before it can act needs more than one canned answer.
+func testRoutedServer(t *testing.T, bodies map[string]string) (*Client, *recorder) {
+	t.Helper()
+	rec := &recorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r)
+		body, found := bodies[r.URL.Path]
+		if !found {
+			body = `{"result":"success"}`
+		}
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return testClient(t, Config{URL: srv.URL}), rec
+}
+
 func TestBaseURLNormalization(t *testing.T) {
 	cases := []struct {
 		in   string

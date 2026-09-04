@@ -421,6 +421,11 @@ func (c *Client) Patch(endpoint string, params map[string]interface{}) ([]byte, 
 	return c.doRequest("PATCH", endpoint, params, nil)
 }
 
+// Put performs a PUT request
+func (c *Client) Put(endpoint string, params map[string]interface{}) ([]byte, error) {
+	return c.doRequest("PUT", endpoint, params, nil)
+}
+
 // Delete performs a DELETE request
 func (c *Client) Delete(endpoint string, params map[string]interface{}) ([]byte, error) {
 	return c.doRequest("DELETE", endpoint, params, nil)

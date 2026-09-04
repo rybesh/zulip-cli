@@ -11,6 +11,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// directRecipients turns what the user typed after --to into the form the
+// server reads. A list of numbers is a list of user IDs, and has to travel as
+// numbers: sent as strings the server reads them as email addresses and
+// rejects them. Anything else is a list of email addresses, which travels
+// unchanged. The two cannot be mixed, so a single unparseable entry keeps the
+// whole list as addresses.
+func directRecipients(to []string) interface{} {
+	ids := make([]int, 0, len(to))
+	for _, recipient := range to {
+		id, err := strconv.Atoi(recipient)
+		if err != nil {
+			return to
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 var sendMessageCmd = &cobra.Command{
 	Use:   "send-message",
 	Short: "Send a message",
@@ -45,7 +63,7 @@ var sendMessageCmd = &cobra.Command{
 		} else if len(to) > 0 {
 			req = client.SendMessageRequest{
 				Type:    "private",
-				To:      to,
+				To:      directRecipients(to),
 				Content: content,
 			}
 		} else {
@@ -302,20 +320,21 @@ var removeReactionCmd = &cobra.Command{
 func reactionHelp(what string) string {
 	return what + `
 
-The emoji is named either by its name, or by --emoji-code together with
---reaction-type. Custom emoji added to the organization are reachable only by
-code:
+The emoji is always named, including custom emoji added to the organization.
+--emoji-code and --reaction-type say which emoji a name belongs to, for the
+rare name that more than one of them answers to:
 
   zulip-cli add-reaction 42 tada
-  zulip-cli add-reaction 42 --emoji-code 1f389 --reaction-type unicode_emoji
-  zulip-cli add-reaction 42 --emoji-code 7 --reaction-type realm_emoji`
+  zulip-cli add-reaction 42 tada --emoji-code 1f389 --reaction-type unicode_emoji
+  zulip-cli add-reaction 42 party-parrot --emoji-code 7 --reaction-type realm_emoji`
 }
 
-// reactionArgs refuses a reaction that names no emoji at all, before the
-// command builds a request the server would only reject.
+// reactionArgs refuses a reaction that names no emoji, before the command
+// builds a request the server would only reject: the server wants the name
+// whatever else it is given.
 func reactionArgs(cmd *cobra.Command, args []string) error {
-	if len(args) < 2 && !cmd.Flags().Changed("emoji-code") {
-		return fmt.Errorf("name the emoji, either as an argument or with --emoji-code and --reaction-type")
+	if len(args) < 2 {
+		return fmt.Errorf("name the emoji: the server needs its name even alongside --emoji-code")
 	}
 	return nil
 }
@@ -501,14 +520,14 @@ var markAllAsReadCmd = &cobra.Command{
 }
 
 var markStreamAsReadCmd = &cobra.Command{
-	Use:     "mark-channel-as-read [channel-id]",
+	Use:     "mark-channel-as-read [channel]",
 	Aliases: []string{"mark-stream-as-read"},
 	Short:   "Mark all messages in a channel as read",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		resp, err := zulipClient.MarkStreamAsRead(streamID)
@@ -521,13 +540,13 @@ var markStreamAsReadCmd = &cobra.Command{
 }
 
 var markTopicAsReadCmd = &cobra.Command{
-	Use:   "mark-topic-as-read [channel-id] [topic]",
+	Use:   "mark-topic-as-read [channel] [topic]",
 	Short: "Mark all messages in a topic as read",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		resp, err := zulipClient.MarkTopicAsRead(streamID, args[1])

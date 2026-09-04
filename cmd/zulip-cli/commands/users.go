@@ -27,16 +27,16 @@ var listUsersCmd = &cobra.Command{
 }
 
 var getUserCmd = &cobra.Command{
-	Use:   "get-user [user-id]",
-	Short: "Get a user by ID",
+	Use:   "get-user [user]",
+	Short: "Get a user by ID or email address",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		userID, err := strconv.Atoi(args[0])
+		userIDs, err := resolveUserIDs(zulipClient, args)
 		if err != nil {
-			return fmt.Errorf("invalid user ID: %w", err)
+			return err
 		}
 
-		resp, err := zulipClient.GetUser(userID, boolFlag(cmd, "include-custom-profile-fields"))
+		resp, err := zulipClient.GetUser(userIDs[0], boolFlag(cmd, "include-custom-profile-fields"))
 		if err != nil {
 			return err
 		}
@@ -288,7 +288,7 @@ seconds.`,
 			if err != nil {
 				return err
 			}
-			req.Type, req.To = "private", userIDs
+			req.Type, req.To = "direct", userIDs
 		default:
 			return fmt.Errorf("either --channel or --to is required")
 		}

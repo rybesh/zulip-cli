@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 )
 
 // Response is the common response structure from Zulip API
@@ -195,6 +194,7 @@ type User struct {
 	IsOwner       bool                   `json:"is_owner,omitempty"`
 	IsAdmin       bool                   `json:"is_admin,omitempty"`
 	IsGuest       bool                   `json:"is_guest,omitempty"`
+	Role          int                    `json:"role,omitempty"`
 	IsBot         bool                   `json:"is_bot"`
 	BotType       *int                   `json:"bot_type,omitempty"`
 	BotOwnerID    *int                   `json:"bot_owner_id,omitempty"`
@@ -274,6 +274,58 @@ type Presence struct {
 	Pushable  bool   `json:"pushable,omitempty"`
 }
 
+// UserPresence is the presence a server reports for one user. The two
+// timestamps share a JSON object with the per-client entries, so a plain map
+// cannot hold it: the numbers are pulled out here and the objects collected
+// under Clients, and marshalling puts the object back the way it arrived.
+type UserPresence struct {
+	ActiveTimestamp int64
+	IdleTimestamp   int64
+	Clients         map[string]Presence
+}
+
+func (p *UserPresence) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	p.Clients = make(map[string]Presence, len(raw))
+	for key, value := range raw {
+		switch key {
+		case "active_timestamp":
+			if err := json.Unmarshal(value, &p.ActiveTimestamp); err != nil {
+				return fmt.Errorf("presence field %s: %w", key, err)
+			}
+		case "idle_timestamp":
+			if err := json.Unmarshal(value, &p.IdleTimestamp); err != nil {
+				return fmt.Errorf("presence field %s: %w", key, err)
+			}
+		default:
+			var presence Presence
+			if err := json.Unmarshal(value, &presence); err != nil {
+				return fmt.Errorf("presence for client %s: %w", key, err)
+			}
+			p.Clients[key] = presence
+		}
+	}
+	return nil
+}
+
+func (p UserPresence) MarshalJSON() ([]byte, error) {
+	out := make(map[string]any, len(p.Clients)+2)
+	for name, presence := range p.Clients {
+		out[name] = presence
+	}
+	if p.ActiveTimestamp != 0 {
+		out["active_timestamp"] = p.ActiveTimestamp
+	}
+	if p.IdleTimestamp != 0 {
+		out["idle_timestamp"] = p.IdleTimestamp
+	}
+	return json.Marshal(out)
+}
+
 // Event represents a Zulip event
 type Event struct {
 	Type string                 `json:"type"`
@@ -311,11 +363,14 @@ type ProfileField struct {
 
 // Attachment represents an uploaded file
 type Attachment struct {
-	ID         int       `json:"id"`
-	Name       string    `json:"name"`
-	PathID     string    `json:"path_id"`
-	Size       int64     `json:"size"`
-	CreateTime time.Time `json:"create_time"`
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	PathID string `json:"path_id"`
+	Size   int64  `json:"size"`
+	// CreateTime is a UNIX timestamp, which is what the server sends. It is
+	// not a time.Time: the server sends a number, not the RFC 3339 string
+	// time.Time knows how to read.
+	CreateTime int64 `json:"create_time"`
 	Messages   []struct {
 		ID       int   `json:"id"`
 		DateSent int64 `json:"date_sent"`

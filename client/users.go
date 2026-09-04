@@ -77,6 +77,7 @@ type GetProfileResponse struct {
 	IsAdmin        bool                   `json:"is_admin"`
 	IsOwner        bool                   `json:"is_owner"`
 	IsGuest        bool                   `json:"is_guest"`
+	Role           int                    `json:"role,omitempty"`
 	IsBillingAdmin bool                   `json:"is_billing_admin"`
 	IsBot          bool                   `json:"is_bot"`
 	AvatarURL      string                 `json:"avatar_url"`
@@ -205,7 +206,7 @@ func (c *Client) ReactivateUser(userID int) (*types.Response, error) {
 // GetUserPresenceResponse represents user presence response
 type GetUserPresenceResponse struct {
 	types.Response
-	Presence map[string]types.Presence `json:"presence"`
+	Presence types.UserPresence `json:"presence"`
 }
 
 // GetUserPresence retrieves a user's presence
@@ -364,13 +365,37 @@ func (c *Client) RemoveAlertWords(words []string) (*RemoveAlertWordsResponse, er
 	return &resp, nil
 }
 
+// DirectMessageTypeFeatureLevel is the first server feature level whose typing
+// endpoint calls a direct message "direct". Older servers know it only as
+// "private", and servers this new no longer accept that spelling.
+const DirectMessageTypeFeatureLevel = 174
+
 // SetTypingStatusRequest represents a typing status request
 type SetTypingStatusRequest struct {
 	Op       string `json:"op"`                  // "start" or "stop"
-	To       []int  `json:"to,omitempty"`        // User IDs for private messages
-	Type     string `json:"type,omitempty"`      // "stream" or "private"
+	To       []int  `json:"to,omitempty"`        // User IDs for direct messages
+	Type     string `json:"type,omitempty"`      // "stream" or "direct"
 	Topic    string `json:"topic,omitempty"`     // For stream messages
 	StreamID int    `json:"stream_id,omitempty"` // For stream messages
+}
+
+// typingConversationType spells a conversation type the way this server wants
+// it. "private" and "direct" name the same kind of conversation, but a server
+// accepts only one of the two, so whichever the caller used is translated.
+// Every other type, such as "stream", passes through untouched.
+func (c *Client) typingConversationType(name string) (string, error) {
+	if name != "private" && name != "direct" {
+		return name, nil
+	}
+
+	level, err := c.FeatureLevel()
+	if err != nil {
+		return "", err
+	}
+	if level < DirectMessageTypeFeatureLevel {
+		return "private", nil
+	}
+	return "direct", nil
 }
 
 // SetTypingStatus sets typing status
@@ -382,7 +407,11 @@ func (c *Client) SetTypingStatus(req SetTypingStatusRequest) (*types.Response, e
 		params["to"] = req.To
 	}
 	if req.Type != "" {
-		params["type"] = req.Type
+		conversation, err := c.typingConversationType(req.Type)
+		if err != nil {
+			return nil, err
+		}
+		params["type"] = conversation
 	}
 	if req.Topic != "" {
 		params["topic"] = req.Topic

@@ -31,9 +31,32 @@ var listStreamsCmd = &cobra.Command{
 }
 
 var getStreamCmd = &cobra.Command{
-	Use:     "get-channel [channel-name]",
+	Use:     "get-channel [channel]",
 	Aliases: []string{"get-stream"},
-	Short:   "Get channel ID by name",
+	Short:   "Get a channel by ID or name",
+	Long: `Get everything the server knows about one channel.
+
+get-channel-id is the way to ask only for a channel's ID.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		streamID, err := resolveChannelID(zulipClient, args[0])
+		if err != nil {
+			return err
+		}
+
+		resp, err := zulipClient.GetStream(streamID)
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
+var getStreamIDCmd = &cobra.Command{
+	Use:     "get-channel-id [channel-name]",
+	Aliases: []string{"get-stream-id"},
+	Short:   "Get a channel's ID by name",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		resp, err := zulipClient.GetStreamID(args[0])
@@ -88,7 +111,7 @@ var updateChannelFlags = []string{
 }
 
 var updateStreamCmd = &cobra.Command{
-	Use:     "update-channel [channel-id]",
+	Use:     "update-channel [channel]",
 	Aliases: []string{"update-stream"},
 	Short:   "Update a channel",
 	Long: `Update a channel's name, description, privacy, or retention policy.
@@ -102,9 +125,9 @@ Making a public channel private, or the other way around, may also need
 existing history from the two together.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		changed := false
@@ -149,14 +172,14 @@ existing history from the two together.`,
 }
 
 var deleteStreamCmd = &cobra.Command{
-	Use:     "delete-channel [channel-id]",
+	Use:     "delete-channel [channel]",
 	Aliases: []string{"delete-stream"},
 	Short:   "Delete a channel",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		resp, err := zulipClient.DeleteStream(streamID)
@@ -169,14 +192,14 @@ var deleteStreamCmd = &cobra.Command{
 }
 
 var listStreamTopicsCmd = &cobra.Command{
-	Use:     "list-channel-topics [channel-id]",
+	Use:     "list-channel-topics [channel]",
 	Aliases: []string{"list-stream-topics"},
 	Short:   "List all topics in a channel",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		resp, err := zulipClient.GetStreamTopics(streamID)
@@ -459,13 +482,13 @@ var listSubscriptionsCmd = &cobra.Command{
 }
 
 var listSubscribersCmd = &cobra.Command{
-	Use:   "list-subscribers [channel-id]",
+	Use:   "list-subscribers [channel]",
 	Short: "List subscribers to a channel",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		resp, err := zulipClient.GetSubscribers(streamID)
@@ -551,13 +574,13 @@ func setTopicVisibility(channel, topic string, policy types.TopicVisibilityPolic
 }
 
 var moveTopicCmd = &cobra.Command{
-	Use:   "move-topic [channel-id] [topic]",
+	Use:   "move-topic [channel] [topic]",
 	Short: "Move a topic to another channel or rename it",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		streamID, err := strconv.Atoi(args[0])
+		streamID, err := resolveChannelID(zulipClient, args[0])
 		if err != nil {
-			return fmt.Errorf("invalid stream ID: %w", err)
+			return err
 		}
 
 		newChannelID, _ := cmd.Flags().GetInt("new-channel-id")

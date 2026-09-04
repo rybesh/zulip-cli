@@ -82,6 +82,28 @@ func (c *Client) GetStreamID(streamName string) (*GetStreamIDResponse, error) {
 	return &resp, nil
 }
 
+// GetStreamResponse represents a single channel response
+type GetStreamResponse struct {
+	types.Response
+	Stream types.Stream `json:"stream"`
+}
+
+// GetStream gets one channel by ID, with everything the server knows about it.
+// GetStreamID is the cheaper way to turn a name into an ID alone.
+func (c *Client) GetStream(streamID int) (*GetStreamResponse, error) {
+	body, err := c.Get(fmt.Sprintf("streams/%d", streamID), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp GetStreamResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 // ChannelCreateFeatureLevel is the first server feature level with
 // POST /channels/create, added in Zulip 11.0. Older servers create a channel as
 // a side effect of subscribing to one that does not exist yet.

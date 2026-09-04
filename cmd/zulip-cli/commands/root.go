@@ -152,6 +152,7 @@ func init() {
 
 	rootCmd.AddCommand(listStreamsCmd)
 	rootCmd.AddCommand(getStreamCmd)
+	rootCmd.AddCommand(getStreamIDCmd)
 	rootCmd.AddCommand(createStreamCmd)
 	rootCmd.AddCommand(updateStreamCmd)
 	rootCmd.AddCommand(deleteStreamCmd)
@@ -214,6 +215,8 @@ func init() {
 
 	rootCmd.AddCommand(serverSettingsCmd)
 	rootCmd.AddCommand(listenCmd)
+	rootCmd.AddCommand(registerCmd)
+	rootCmd.AddCommand(getEventsCmd)
 	rootCmd.AddCommand(deregisterCmd)
 
 	rootCmd.AddCommand(versionCmd)

@@ -92,9 +92,26 @@ func (c *Client) UpdateUserGroup(req UpdateUserGroupRequest) (*types.Response, e
 	return &resp, nil
 }
 
-// DeleteUserGroup deletes a user group
+// UserGroupDeactivateFeatureLevel is the first server feature level with
+// POST /user_groups/{id}/deactivate. Older servers delete a group outright,
+// and servers this new answer that DELETE with "Method Not Allowed".
+const UserGroupDeactivateFeatureLevel = 290
+
+// DeleteUserGroup deletes a user group. Servers from feature level 290
+// deactivate it through the dedicated endpoint; older ones delete it.
 func (c *Client) DeleteUserGroup(groupID int) (*types.Response, error) {
-	body, err := c.Delete(fmt.Sprintf("user_groups/%d", groupID), nil)
+	level, err := c.FeatureLevel()
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := fmt.Sprintf("user_groups/%d", groupID)
+	var body []byte
+	if level < UserGroupDeactivateFeatureLevel {
+		body, err = c.Delete(endpoint, nil)
+	} else {
+		body, err = c.Post(endpoint+"/deactivate", nil)
+	}
 	if err != nil {
 		return nil, err
 	}

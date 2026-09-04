@@ -48,7 +48,7 @@ func (c *Client) UpdateStorage(storage map[string]string) (*types.Response, erro
 		"storage": storage,
 	}
 
-	body, err := c.Post("bot_storage", params)
+	body, err := c.Put("bot_storage", params)
 	if err != nil {
 		return nil, err
 	}

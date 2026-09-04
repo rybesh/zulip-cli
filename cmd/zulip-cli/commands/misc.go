@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/rybesh/zulip-cli/client"
 	"github.com/rybesh/zulip-cli/types"
 	"github.com/spf13/cobra"
 )
@@ -133,10 +134,12 @@ With no --event-types, listens for messages only.`,
 		// Status goes to stderr so that piping the events into jq keeps working.
 		if messagesOnly || len(eventTypes) == 0 {
 			fmt.Fprintln(os.Stderr, "Listening for messages... (Press Ctrl+C to stop)")
+			// Each message is printed as JSON, one after another, for the same
+			// reason every other command prints JSON: so that stdout can be
+			// piped straight into jq.
 			return zulipClient.CallOnEachMessage(ctx, func(msg types.Message) {
-				fmt.Printf("\n[%s] %s: %s\n", msg.Type, msg.SenderFullName, msg.Content)
-				if msg.Type == "stream" {
-					fmt.Printf("  Channel: %v | Topic: %s\n", msg.DisplayRecipient, msg.Subject)
+				if err := printJSON(msg); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to print message %d: %v\n", msg.ID, err)
 				}
 			})
 		}
@@ -145,6 +148,65 @@ With no --event-types, listens for messages only.`,
 		return zulipClient.CallOnEachEvent(ctx, func(event map[string]interface{}) {
 			printJSON(event)
 		}, eventTypes, nil)
+	},
+}
+
+var registerCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Register an event queue",
+	Long: `Register an event queue and print its ID.
+
+listen keeps a queue of its own and needs none of this. Registering one by
+hand is for driving the queue from a script: hold the queue ID and the last
+event ID it reports, poll with get-events, and release it with deregister when
+the script is done.
+
+With no --event-types the server sends every event type it has for you.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		eventTypes, _ := cmd.Flags().GetStringSlice("event-types")
+
+		resp, err := zulipClient.Register(client.RegisterRequest{
+			EventTypes:         eventTypes,
+			AllPublicStreams:   boolFlag(cmd, "all-public-channels"),
+			IncludeSubscribers: boolFlag(cmd, "include-subscribers"),
+			ClientGravatar:     boolFlag(cmd, "client-gravatar"),
+			SlimPresence:       boolFlag(cmd, "slim-presence"),
+			ApplyMarkdown:      boolFlag(cmd, "apply-markdown"),
+		})
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
+var getEventsCmd = &cobra.Command{
+	Use:   "get-events [queue-id]",
+	Short: "Fetch events from a queue",
+	Long: `Fetch the events a queue has collected since a given event ID.
+
+The queue comes from register. --last-event-id is where to read from: the
+value register reported the first time, and afterwards the largest id among
+the events of the previous fetch, so that no event is read twice.
+
+The server holds the request open until it has something to say. --dont-block
+takes whatever has already arrived and returns at once.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		lastEventID, _ := cmd.Flags().GetInt("last-event-id")
+		dontBlock, _ := cmd.Flags().GetBool("dont-block")
+
+		resp, err := zulipClient.GetEvents(client.GetEventsRequest{
+			QueueID:     args[0],
+			LastEventID: lastEventID,
+			DontBlock:   dontBlock,
+		})
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
 	},
 }
 
@@ -170,4 +232,14 @@ collecting events for it until it expires. This releases one early.`,
 func init() {
 	listenCmd.Flags().StringSlice("event-types", nil, "Event types to listen for (comma-separated)")
 	listenCmd.Flags().Bool("messages-only", false, "Listen for messages only (the default when no --event-types are given)")
+
+	registerCmd.Flags().StringSlice("event-types", nil, "Event types the queue should collect (comma-separated); every type by default")
+	registerCmd.Flags().Bool("all-public-channels", false, "Collect messages from every public channel, not only the ones you subscribe to")
+	registerCmd.Flags().Bool("include-subscribers", false, "Include each channel's subscribers in the initial state")
+	registerCmd.Flags().Bool("client-gravatar", false, "Leave out avatar URLs that can be computed from the sender's email")
+	registerCmd.Flags().Bool("slim-presence", false, "Report presence by user ID rather than by email address")
+	registerCmd.Flags().Bool("apply-markdown", true, "Render message content to HTML, rather than the Markdown the sender typed")
+
+	getEventsCmd.Flags().Int("last-event-id", -1, "Fetch events newer than this ID")
+	getEventsCmd.Flags().Bool("dont-block", false, "Return whatever has already arrived instead of waiting for an event")
 }

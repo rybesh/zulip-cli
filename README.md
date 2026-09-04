@@ -93,9 +93,7 @@ zulip-cli listen
 ## Usage
 
 Every command prints JSON on stdout; status lines and errors go to stderr, so
-output stays safe to pipe. The one exception is `listen` in its default
-message mode, which prints human-readable lines rather than JSON — see
-[Other Commands](#other-commands). `--output` currently accepts only `json` —
+output stays safe to pipe. `--output` currently accepts only `json` —
 YAML and table formats are on the roadmap, and asking for one is an error
 rather than silently getting JSON.
 
@@ -144,9 +142,10 @@ zulip-cli update-message 12345 --channel-id 43
 # Delete a message
 zulip-cli delete-message 12345
 
-# Add emoji reaction, by name or by code
+# Add emoji reaction. The name is always required; a code says which emoji
+# a name belongs to, for a name more than one of them answers to.
 zulip-cli add-reaction 12345 thumbs_up
-zulip-cli add-reaction 12345 --emoji-code 7 --reaction-type realm_emoji
+zulip-cli add-reaction 12345 party-parrot --emoji-code 7 --reaction-type realm_emoji
 
 # Mark specific messages read, unread, or starred
 zulip-cli update-message-flags add read 12345 12346
@@ -217,8 +216,11 @@ is unchanged — keys such as `stream_id` and `streams` stay exactly as they are
 # List all channels
 zulip-cli list-channels
 
-# Get channel ID by name
+# Get a channel, by name or by ID
 zulip-cli get-channel "general"
+
+# Get only a channel's ID, by name
+zulip-cli get-channel-id "general"
 
 # Create a channel
 zulip-cli create-channel engineering --description "Engineering discussions"
@@ -352,8 +354,9 @@ the new channel's `id`, the older one reports who was subscribed.
 # List all users
 zulip-cli list-users
 
-# Get user details
+# Get user details, by ID or by email address
 zulip-cli get-user 123
+zulip-cli get-user dana@example.com
 
 # Get your own profile
 zulip-cli get-profile
@@ -440,18 +443,26 @@ zulip-cli listen
 zulip-cli listen --event-types message
 zulip-cli listen --event-types message,reaction,subscription
 
+# Drive a queue by hand, instead of holding one open with listen
+zulip-cli register --event-types message
+zulip-cli get-events 1518familiar --last-event-id -1
+zulip-cli get-events 1518familiar --last-event-id 7 --dont-block
+
 # Release an event queue a killed listener left behind
 zulip-cli deregister 1518familiar
 ```
 
-`listen` has two modes, and they print different things. With no
-`--event-types` (or with `--messages-only`) it prints **human-readable lines**
-like `[stream] Alice: <p>hi</p>` — convenient to watch, but not JSON, so do not
-pipe that mode into `jq`. With `--event-types` it prints the **raw event
-objects as JSON**, one per value, which is the mode to script against. A
-message event nests the message under `.message`, so the fields are
-`.message.sender_full_name`, `.message.content`, and so on. The two flags
+`listen` has two modes, and both print JSON, one value after another. With no
+`--event-types` (or with `--messages-only`) each value is a **message**, so the
+fields are `.sender_full_name`, `.content`, and so on. With `--event-types`
+each value is a **raw event**, which nests a message under `.message`: there
+the fields are `.message.sender_full_name`, `.message.content`. The two flags
 cannot be combined.
+
+`listen` keeps an event queue of its own. `register`, `get-events` and
+`deregister` are the same queue taken apart, for a script that wants to poll on
+its own schedule: register once, then pass each fetch the largest event id the
+last one returned, so no event is read twice.
 
 Bot storage belongs to the bot whose credentials are in the environment, so a
 human account has none. `listen` releases its own queue when stopped with
@@ -461,8 +472,7 @@ outright.
 ## JSON Output & jq Examples
 
 Every command prints JSON on stdout, so the examples below pipe straight into
-`jq`. The one exception is `listen` without `--event-types`, which prints
-human-readable lines instead; see the note in [Other Commands](#other-commands).
+`jq`.
 
 ### Pretty Print
 
@@ -808,7 +818,7 @@ Wrapped:
 
 - **Messages** - send, fetch, raw Markdown, update, delete, edit history,
   reactions, flags, mark-as-read, render, narrow matching
-- **Channels** - list, create, update, delete, topics, email address,
+- **Channels** - get, list, create, update, delete, topics, email address,
   subscribe, unsubscribe, subscribers, subscription settings, default channels
 - **Topics** - move, rename, and set a visibility policy (mute, unmute, follow)
 - **Users** - list, get, profile, create, update, deactivate, reactivate,
@@ -816,7 +826,7 @@ Wrapped:
 - **User Groups** - list, create, update, delete, add and remove members
 - **Emoji** - list, upload, and delete custom emoji
 - **Realm** - linkifiers, custom profile fields, server settings
-- **Events** - register a queue, stream events or messages, deregister
+- **Events** - register a queue, poll it, stream events or messages, deregister
 - **Files** - upload attachments and list your own
 - **Bot storage** - read and write the calling bot's stored state
 

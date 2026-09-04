@@ -292,11 +292,15 @@ func TestFlagsReachTheRequest(t *testing.T) {
 			},
 		},
 		{
-			name:       "a custom emoji is reachable by code",
-			args:       []string{"add-reaction", "42", "--emoji-code", "7", "--reaction-type", "realm_emoji"},
+			// The server wants emoji_name whatever else it is given, so a code
+			// narrows a name rather than standing in for one.
+			name:       "a custom emoji is named alongside its code",
+			args:       []string{"add-reaction", "42", "party-parrot", "--emoji-code", "7", "--reaction-type", "realm_emoji"},
 			wantMethod: "POST",
 			wantPath:   "/api/v1/messages/42/reactions",
-			wantParams: url.Values{"emoji_code": {"7"}, "reaction_type": {"realm_emoji"}},
+			wantParams: url.Values{
+				"emoji_name": {"party-parrot"}, "emoji_code": {"7"}, "reaction_type": {"realm_emoji"},
+			},
 		},
 		{
 			name:       "a reaction named by hand still sends its name",
@@ -332,9 +336,10 @@ func TestFlagsReachTheRequest(t *testing.T) {
 			},
 		},
 		{
+			// The endpoint answers POST with "Method Not Allowed"; it is a PUT.
 			name:       "bot storage is written as key and value",
 			args:       []string{"update-storage", "last-seen=1717171717", "greeting=hello there"},
-			wantMethod: "POST",
+			wantMethod: "PUT",
 			wantPath:   "/api/v1/bot_storage",
 			wantParams: url.Values{
 				"storage": {`{"greeting":"hello there","last-seen":"1717171717"}`},
@@ -911,6 +916,41 @@ func TestChannelNamesAreLookedUp(t *testing.T) {
 			args:     []string{"set-typing-status", "start", "--channel", "general", "--topic", "standup"},
 			wantPath: "/api/v1/typing",
 		},
+		{
+			name:     "get-channel",
+			args:     []string{"get-channel", "general"},
+			wantPath: "/api/v1/streams/42",
+		},
+		{
+			name:     "update-channel",
+			args:     []string{"update-channel", "general", "--description", "hi"},
+			wantPath: "/api/v1/streams/42",
+		},
+		{
+			name:     "delete-channel",
+			args:     []string{"delete-channel", "general"},
+			wantPath: "/api/v1/streams/42",
+		},
+		{
+			name:     "list-channel-topics",
+			args:     []string{"list-channel-topics", "general"},
+			wantPath: "/api/v1/users/me/42/topics",
+		},
+		{
+			name:     "list-subscribers",
+			args:     []string{"list-subscribers", "general"},
+			wantPath: "/api/v1/streams/42/members",
+		},
+		{
+			name:     "mark-channel-as-read",
+			args:     []string{"mark-channel-as-read", "general"},
+			wantPath: "/api/v1/mark_stream_as_read",
+		},
+		{
+			name:     "mark-topic-as-read",
+			args:     []string{"mark-topic-as-read", "general", "standup"},
+			wantPath: "/api/v1/mark_topic_as_read",
+		},
 	}
 
 	for _, tc := range cases {
@@ -952,5 +992,210 @@ func TestGetSubscriptionStatusResolvesBoth(t *testing.T) {
 	method, path, _, _ := fake.snapshot()
 	if method != "GET" || path != "/api/v1/users/12/subscriptions/42" {
 		t.Errorf("%s %s, want GET /api/v1/users/12/subscriptions/42", method, path)
+	}
+}
+
+// move-topic takes a channel name too, though it looks up the topic's first
+// message between resolving the name and moving anything.
+func TestMoveTopicLooksUpChannelName(t *testing.T) {
+	fake := newRoutedFakeZulip(t, map[string]string{
+		"/api/v1/get_stream_id": `{"result":"success","stream_id":42}`,
+		"/api/v1/messages":      `{"result":"success","messages":[{"id":7}]}`,
+	})
+
+	if _, err := run(t, "move-topic", "general", "standup", "--new-topic", "scrum"); err != nil {
+		t.Fatal(err)
+	}
+
+	requests := fake.all()
+	if requests[0].path != "/api/v1/get_stream_id" {
+		t.Errorf("looked up %s, want /api/v1/get_stream_id", requests[0].path)
+	}
+	last := requests[len(requests)-1]
+	if last.method != "PATCH" || last.path != "/api/v1/messages/7" {
+		t.Errorf("%s %s, want PATCH /api/v1/messages/7", last.method, last.path)
+	}
+}
+
+// A user is named by ID or by email address wherever one is taken, so that
+// neither is the only thing that works.
+func TestGetUserAcceptsAnEmailAddress(t *testing.T) {
+	fake := newRoutedFakeZulip(t, map[string]string{
+		"/api/v1/users": `{"result":"success","members":[
+			{"user_id":12,"email":"dana@example.com","full_name":"Dana"}]}`,
+	})
+
+	if _, err := run(t, "get-user", "dana@example.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, path, _, calls := fake.snapshot()
+	if calls != 2 {
+		t.Fatalf("made %d requests, want a user lookup and the fetch itself", calls)
+	}
+	if path != "/api/v1/users/12" {
+		t.Errorf("path = %s, want /api/v1/users/12", path)
+	}
+}
+
+// Direct message recipients given as numbers are user IDs, and have to travel
+// as numbers: sent as strings the server reads them as email addresses.
+func TestDirectMessageRecipientsTravelAsTheServerReadsThem(t *testing.T) {
+	cases := []struct {
+		name   string
+		to     string
+		wantTo string
+	}{
+		{name: "user IDs", to: "12,15", wantTo: `[12,15]`},
+		{name: "email addresses", to: "dana@example.com", wantTo: `["dana@example.com"]`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeZulip(t, `{"result":"success","id":1}`)
+
+			if _, err := run(t, "send-message", "--to", tc.to, "--content", "yo"); err != nil {
+				t.Fatal(err)
+			}
+
+			_, _, params, _ := fake.snapshot()
+			if got := params.Get("to"); got != tc.wantTo {
+				t.Errorf("to = %s, want %s", got, tc.wantTo)
+			}
+		})
+	}
+}
+
+// The typing endpoint calls a direct message "direct" from feature level 174,
+// and a server that new refuses the older spelling outright.
+func TestTypingStatusSpellsDirectMessagesForTheServer(t *testing.T) {
+	cases := []struct {
+		name     string
+		level    int
+		wantType string
+	}{
+		{name: "a current server", level: 507, wantType: "direct"},
+		{name: "a server from before the rename", level: 173, wantType: "private"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newRoutedFakeZulip(t, map[string]string{
+				"/api/v1/server_settings": fmt.Sprintf(
+					`{"result":"success","zulip_feature_level":%d}`, tc.level),
+				"/api/v1/users": `{"result":"success","members":[
+					{"user_id":12,"email":"dana@example.com"}]}`,
+			})
+
+			if _, err := run(t, "set-typing-status", "start", "--to", "12"); err != nil {
+				t.Fatal(err)
+			}
+
+			method, path, params, _ := fake.snapshot()
+			if method != "POST" || path != "/api/v1/typing" {
+				t.Fatalf("%s %s, want POST /api/v1/typing", method, path)
+			}
+			if got := params.Get("type"); got != tc.wantType {
+				t.Errorf("type = %s, want %s", got, tc.wantType)
+			}
+		})
+	}
+}
+
+// Deleting a user group became a deactivation at feature level 290, and a
+// server that new answers the older DELETE with "Method Not Allowed".
+func TestDeleteUserGroupUsesTheEndpointTheServerHas(t *testing.T) {
+	cases := []struct {
+		name       string
+		level      int
+		wantMethod string
+		wantPath   string
+	}{
+		{name: "a current server", level: 507, wantMethod: "POST", wantPath: "/api/v1/user_groups/42/deactivate"},
+		{name: "a server from before", level: 289, wantMethod: "DELETE", wantPath: "/api/v1/user_groups/42"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newRoutedFakeZulip(t, map[string]string{
+				"/api/v1/server_settings": fmt.Sprintf(
+					`{"result":"success","zulip_feature_level":%d}`, tc.level),
+			})
+
+			if _, err := run(t, "delete-user-group", "42"); err != nil {
+				t.Fatal(err)
+			}
+
+			method, path, _, _ := fake.snapshot()
+			if method != tc.wantMethod || path != tc.wantPath {
+				t.Errorf("%s %s, want %s %s", method, path, tc.wantMethod, tc.wantPath)
+			}
+		})
+	}
+}
+
+// Responses are decoded from the shapes a server really sends. Each of these
+// once failed to decode at all, because the Go type disagreed with the JSON.
+func TestResponsesDecodeTheShapesTheServerSends(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		body string
+		want []string
+	}{
+		{
+			// create_time is a UNIX timestamp, not an RFC 3339 string.
+			name: "an attachment's creation time is a number",
+			args: []string{"list-attachments"},
+			body: `{"result":"success","attachments":[
+				{"id":11,"name":"notes.txt","size":30,"create_time":1788484521,"messages":[]}],
+				"upload_space_used":30}`,
+			want: []string{`"create_time": 1788484521`, `"name": "notes.txt"`},
+		},
+		{
+			// The timestamps share the object with the per-client entries.
+			name: "presence mixes timestamps with client entries",
+			args: []string{"get-user-presence", "12"},
+			body: `{"result":"success","presence":{
+				"active_timestamp":1788484408,"idle_timestamp":1788484409,
+				"aggregated":{"status":"active","timestamp":1788484408},
+				"website":{"client":"website","status":"active","timestamp":1788484408}}}`,
+			want: []string{
+				`"active_timestamp": 1788484408`,
+				`"idle_timestamp": 1788484409`,
+				`"aggregated"`,
+				`"website"`,
+			},
+		},
+		{
+			name: "a user carries the role the server assigned",
+			args: []string{"list-users"},
+			body: `{"result":"success","members":[
+				{"user_id":12,"email":"dana@example.com","full_name":"Dana","role":400}]}`,
+			want: []string{`"role": 400`},
+		},
+		{
+			name: "your own profile carries your role too",
+			args: []string{"get-profile"},
+			body: `{"result":"success","user_id":12,"email":"dana@example.com",
+				"full_name":"Dana","is_bot":false,"role":100}`,
+			want: []string{`"role": 100`},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			newFakeZulip(t, tc.body)
+
+			out, err := run(t, tc.args...)
+			if err != nil {
+				t.Fatalf("%v: %v", tc.args, err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("output missing %s:\n%s", want, out)
+				}
+			}
+		})
 	}
 }

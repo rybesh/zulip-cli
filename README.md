@@ -1,19 +1,19 @@
 # zulip-cli
 
-**An [Intelligrit Labs](https://intelligrit.com#labs) Project**
-
 [![CI](https://github.com/rybesh/zulip-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/rybesh/zulip-cli/actions/workflows/ci.yml)
 
-<p align="center">
-  <img src="logo.png" alt="zulip-cli logo" width="200">
-</p>
+A command-line interface and Go library for the Zulip API: scriptable access to
+messages, channels, users, groups, emoji, linkifiers, profile fields, bot
+storage, and the event stream. See [API Coverage](#api-coverage) for what is and
+is not wrapped.
 
-A comprehensive command-line interface and Go library for the Zulip API. Provides complete scriptable access to messages, channels, users, and all Zulip features with full API coverage.
+This began as a fork of [intelligrit/zulip-cli](https://github.com/intelligrit/zulip-cli)
+and is now maintained separately here.
 
 ## Features
 
-- ✅ **Complete API coverage** - Every Zulip endpoint supported
-- ✅ **Scriptable** - JSON output by default, perfect for piping to `jq` or other tools
+- ✅ **Every client method has a command** - the CLI exposes the whole library
+- ✅ **Scriptable** - JSON on stdout, status and errors on stderr, safe to pipe to `jq`
 - ✅ **Real-time events** - Listen for messages and events as they happen
 - ✅ **Type-safe Go library** - Use in your own Go applications
 - ✅ **No config files** - Simple environment variable authentication
@@ -93,9 +93,11 @@ zulip-cli listen
 ## Usage
 
 Every command prints JSON on stdout; status lines and errors go to stderr, so
-output stays safe to pipe. `--output` currently accepts only `json` — YAML and
-table formats are on the roadmap, and asking for one is an error rather than
-silently getting JSON.
+output stays safe to pipe. The one exception is `listen` in its default
+message mode, which prints human-readable lines rather than JSON — see
+[Other Commands](#other-commands). `--output` currently accepts only `json` —
+YAML and table formats are on the roadmap, and asking for one is an error
+rather than silently getting JSON.
 
 Boolean flags are only sent when you pass them, so leaving one out means "use
 the server's default" and passing `--flag=false` really does turn the setting
@@ -406,9 +408,14 @@ zulip-cli upload-emoji smiley emoji.png
 zulip-cli list-alert-words
 zulip-cli add-alert-words "urgent" "asap" "critical"
 
-# Manage user groups
+# Manage user groups. Name and description are both positional; --members
+# takes user IDs, which list-users reports.
 zulip-cli list-user-groups
-zulip-cli create-user-group "Engineering" --description "Engineering team"
+zulip-cli create-user-group "Engineering" "Engineering team" --members 12,34
+zulip-cli update-user-group 7 --name "Platform" --description "Platform team"
+zulip-cli add-group-members 7 56 78
+zulip-cli remove-group-members 7 56
+zulip-cli delete-user-group 7
 
 # Manage linkifiers, which turn patterns in messages into links
 zulip-cli list-linkifiers
@@ -426,9 +433,25 @@ zulip-cli delete-profile-field 4
 zulip-cli get-storage
 zulip-cli update-storage last-seen=1717171717 greeting="hello there"
 
+# Watch for new messages, printed for a human to read
+zulip-cli listen
+
+# Watch the raw event stream as JSON, one event per value
+zulip-cli listen --event-types message
+zulip-cli listen --event-types message,reaction,subscription
+
 # Release an event queue a killed listener left behind
 zulip-cli deregister 1518familiar
 ```
+
+`listen` has two modes, and they print different things. With no
+`--event-types` (or with `--messages-only`) it prints **human-readable lines**
+like `[stream] Alice: <p>hi</p>` — convenient to watch, but not JSON, so do not
+pipe that mode into `jq`. With `--event-types` it prints the **raw event
+objects as JSON**, one per value, which is the mode to script against. A
+message event nests the message under `.message`, so the fields are
+`.message.sender_full_name`, `.message.content`, and so on. The two flags
+cannot be combined.
 
 Bot storage belongs to the bot whose credentials are in the environment, so a
 human account has none. `listen` releases its own queue when stopped with
@@ -437,7 +460,9 @@ outright.
 
 ## JSON Output & jq Examples
 
-All commands output JSON by default, making zulip-cli perfect for scripting.
+Every command prints JSON on stdout, so the examples below pipe straight into
+`jq`. The one exception is `listen` without `--event-types`, which prints
+human-readable lines instead; see the note in [Other Commands](#other-commands).
 
 ### Pretty Print
 
@@ -531,8 +556,9 @@ zulip-cli send-message \
 #!/bin/bash
 MY_NAME="Alice"
 
-zulip-cli listen --messages-only | jq --unbuffered -r \
-  "select(.sender_full_name != \"$MY_NAME\" and (.content | contains(\"@$MY_NAME\"))) | \
+# Event mode is the one that emits JSON; message mode prints text for a human.
+zulip-cli listen --event-types message | jq --unbuffered -r \
+  ".message | select(.sender_full_name != \"$MY_NAME\" and (.content | contains(\"@$MY_NAME\"))) | \
    \"[MENTION] \(.sender_full_name) in #\(.display_recipient)/\(.subject): \(.content)\""
 ```
 
@@ -578,8 +604,8 @@ echo "$MESSAGES" | jq -r '[.messages | group_by(.sender_full_name) | .[] |
 #!/bin/bash
 KEYWORDS=("urgent" "critical" "help")
 
-zulip-cli listen --messages-only | jq --unbuffered -r \
-  "select(.content | ascii_downcase | test(\"$(IFS='|'; echo "${KEYWORDS[*]}")\")) | \
+zulip-cli listen --event-types message | jq --unbuffered -r \
+  ".message | select(.content | ascii_downcase | test(\"$(IFS='|'; echo "${KEYWORDS[*]}")\")) | \
    \"[ALERT] \(.sender_full_name): \(.content)\"" | \
   while read -r alert; do
     echo "$alert"
@@ -703,25 +729,30 @@ err := c.CallOnEachMessage(ctx, func(msg types.Message) {
 ```
 zulip-cli/
 ├── client/              # Go client library
-│   ├── client.go        # Core client & auth
+│   ├── client.go        # Core client, auth, request plumbing
 │   ├── messages.go      # Message operations
-│   ├── streams.go       # Stream operations
+│   ├── streams.go       # Channel, subscription, and topic operations
 │   ├── users.go         # User operations
 │   ├── groups.go        # User group operations
-│   ├── realm.go         # Realm/emoji/filters
-│   ├── events.go        # Event streaming
-│   └── storage.go       # Bot storage
+│   ├── realm.go         # Emoji, linkifiers, profile fields
+│   ├── events.go        # Event queues and streaming
+│   ├── storage.go       # Bot storage
+│   └── version.go       # Client version string
 ├── types/               # Type definitions
 │   └── types.go         # All API types
 ├── cmd/zulip-cli/       # CLI application
 │   ├── main.go
-│   └── commands/        # CLI commands
-│       ├── root.go
+│   └── commands/        # One file per command group, mirroring client/
+│       ├── root.go      # Root command, flags, output, flag helpers
 │       ├── messages.go
 │       ├── streams.go
 │       ├── users.go
 │       ├── groups.go
-│       └── misc.go
+│       ├── realm.go
+│       ├── storage.go
+│       ├── misc.go      # Alert words, listen, deregister, server settings
+│       └── version.go
+├── .github/workflows/   # CI
 ├── LICENSE
 ├── README.md
 └── go.mod
@@ -769,66 +800,74 @@ and `go test -race ./...` on every push to `main` and on every pull request.
 
 ## API Coverage
 
-The library provides complete coverage of the Zulip API including:
+This is not a complete wrapper of the Zulip API, and the parts it does wrap are
+the parts listed here. Every method the client library exposes has a command
+attached to it, so anything below is reachable from both Go and the shell.
 
-- **Messages** - Send, fetch, update, delete, reactions, flags, rendering
-- **Channels** - Create, update, delete, subscribe, topics, email addresses
-- **Users** - List, create, update, deactivate, presence, alert words
-- **User Groups** - Create, update, delete, manage members
-- **Emoji** - List, upload, delete custom emoji
-- **Realm** - Linkifiers, profile fields, server settings
-- **Events** - Real-time event streaming and message listening
-- **Files** - Upload and manage attachments
+Wrapped:
+
+- **Messages** - send, fetch, raw Markdown, update, delete, edit history,
+  reactions, flags, mark-as-read, render, narrow matching
+- **Channels** - list, create, update, delete, topics, email address,
+  subscribe, unsubscribe, subscribers, subscription settings, default channels
+- **Topics** - move, rename, and set a visibility policy (mute, unmute, follow)
+- **Users** - list, get, profile, create, update, deactivate, reactivate,
+  presence, alert words, typing status, notification settings
+- **User Groups** - list, create, update, delete, add and remove members
+- **Emoji** - list, upload, and delete custom emoji
+- **Realm** - linkifiers, custom profile fields, server settings
+- **Events** - register a queue, stream events or messages, deregister
+- **Files** - upload attachments and list your own
+- **Bot storage** - read and write the calling bot's stored state
+
+Not wrapped, and the most likely candidates if you need more: drafts, scheduled
+messages, read receipts, user status, saved snippets, invitations, outgoing
+webhooks and bot management, realm export and settings administration.
 
 ## Roadmap
 
-- [ ] YAML output format support
-- [ ] Table output format for better CLI readability
-- [ ] Configuration file support (optional)
-- [ ] Shell completion scripts
-- [ ] Webhooks/outgoing webhooks support
-- [ ] Message drafts management
-- [ ] Typing indicators
-- [ ] Read receipts
-- [ ] OPML export for subscriptions
+Tracked as issues in this repository. The larger open items:
 
-## About Intelligrit Labs
+- [ ] YAML output format (`-o yaml`)
+- [ ] Table output format (`-o table`)
+- [ ] Optional configuration file, as an alternative to environment variables
+- [ ] The unwrapped endpoint groups listed under API Coverage
 
-zulip-cli is developed by [Intelligrit Labs](https://intelligrit.com#labs), the R&D arm of Intelligrit LLC. We build tools for ourselves and release them for everyone. Intelligrit delivers AI-driven IT modernization for federal agencies.
+Shell completion is already available through Cobra: `zulip-cli completion bash`
+(or `zsh`, `fish`, `powershell`).
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details
+MIT. See [LICENSE](LICENSE).
+
+The project began as a fork of
+[intelligrit/zulip-cli](https://github.com/intelligrit/zulip-cli), and the
+original copyright notice stays in `LICENSE` alongside ours.
 
 ## Contributing
 
-Contributions are welcome! This project follows standard Go conventions.
+Issues and pull requests are welcome at
+[github.com/rybesh/zulip-cli](https://github.com/rybesh/zulip-cli).
 
-### Guidelines
+Before opening a pull request:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes following Go best practices
-4. Write tests for new functionality
-5. Ensure all tests pass (`go test ./...`)
-6. Run `go fmt` and `go vet`
-7. Commit your changes (`git commit -m 'Add amazing feature'`)
-8. Push to the branch (`git push origin feature/amazing-feature`)
-9. Open a Pull Request
+1. `gofmt -l .` reports nothing
+2. `go vet ./...` is clean
+3. `go test -race ./...` passes
+4. New behavior comes with a test — the suite runs against `httptest`, so it
+   needs no Zulip server
 
-### Code Style
-
-- Follow standard Go formatting (`gofmt`, `go vet`)
-- Write clear, descriptive commit messages
-- Add comments for exported functions and types
-- Keep functions focused and modular
+CI runs all four on every push and pull request. Beyond that: exported
+functions and types get doc comments, and commit messages say what changed and
+why.
 
 ## Support
 
-For issues, questions, or contributions, please open an issue on GitHub.
+Open an issue at
+[github.com/rybesh/zulip-cli/issues](https://github.com/rybesh/zulip-cli/issues).
 
 ## Acknowledgments
 
-- Built with [Cobra](https://github.com/spf13/cobra) CLI framework
-- Complete reimplementation of the [python-zulip-api](https://github.com/zulip/python-zulip-api) library in Go
+- Built with the [Cobra](https://github.com/spf13/cobra) CLI framework
+- Modeled on [python-zulip-api](https://github.com/zulip/python-zulip-api)
 - Thanks to the Zulip team for their excellent API documentation

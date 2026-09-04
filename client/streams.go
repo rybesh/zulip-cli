@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"github.com/rybesh/zulip-cli/types"
 )
@@ -81,71 +82,183 @@ func (c *Client) GetStreamID(streamName string) (*GetStreamIDResponse, error) {
 	return &resp, nil
 }
 
-// CreateStreamRequest represents a stream creation request
-type CreateStreamRequest struct {
-	Subscriptions []struct {
-		Name        string `json:"name"`
-		Description string `json:"description,omitempty"`
-	} `json:"subscriptions"`
-	Principals                 []interface{} `json:"principals,omitempty"` // Can be email strings or user IDs
-	AuthorizationErrorsFatal   *bool         `json:"authorization_errors_fatal,omitempty"`
-	Announce                   *bool         `json:"announce,omitempty"`
-	InviteOnly                 *bool         `json:"invite_only,omitempty"`
-	IsWebPublic                *bool         `json:"is_web_public,omitempty"`
-	HistoryPublicToSubscribers *bool         `json:"history_public_to_subscribers,omitempty"`
-	StreamPostPolicy           int           `json:"stream_post_policy,omitempty"`
-	MessageRetentionDays       interface{}   `json:"message_retention_days,omitempty"`
+// ChannelCreateFeatureLevel is the first server feature level with
+// POST /channels/create, added in Zulip 11.0. Older servers create a channel as
+// a side effect of subscribing to one that does not exist yet.
+const ChannelCreateFeatureLevel = 417
+
+// ChannelSettings is the initial configuration of a new channel. Both creation
+// endpoints accept the same set, so the same values travel either way.
+//
+// The can_*_group fields are group-setting values; see types.GroupSetting.
+// Several of them were added after the settings themselves, so an older server
+// will ignore some — which it reports, and the client warns about.
+type ChannelSettings struct {
+	InviteOnly                        *bool               `json:"invite_only,omitempty"`
+	IsWebPublic                       *bool               `json:"is_web_public,omitempty"`
+	IsDefaultStream                   *bool               `json:"is_default_stream,omitempty"`
+	HistoryPublicToSubscribers        *bool               `json:"history_public_to_subscribers,omitempty"`
+	DefaultPushNotifications          *bool               `json:"default_push_notifications,omitempty"`
+	MessageRetentionDays              interface{}         `json:"message_retention_days,omitempty"`
+	FolderID                          *int                `json:"folder_id,omitempty"`
+	TopicsPolicy                      *string             `json:"topics_policy,omitempty"`
+	CanAddSubscribersGroup            *types.GroupSetting `json:"can_add_subscribers_group,omitempty"`
+	CanAdministerChannelGroup         *types.GroupSetting `json:"can_administer_channel_group,omitempty"`
+	CanCreateTopicGroup               *types.GroupSetting `json:"can_create_topic_group,omitempty"`
+	CanDeleteAnyMessageGroup          *types.GroupSetting `json:"can_delete_any_message_group,omitempty"`
+	CanDeleteOwnMessageGroup          *types.GroupSetting `json:"can_delete_own_message_group,omitempty"`
+	CanMoveMessagesOutOfChannelGroup  *types.GroupSetting `json:"can_move_messages_out_of_channel_group,omitempty"`
+	CanMoveMessagesWithinChannelGroup *types.GroupSetting `json:"can_move_messages_within_channel_group,omitempty"`
+	CanRemoveSubscribersGroup         *types.GroupSetting `json:"can_remove_subscribers_group,omitempty"`
+	CanResolveTopicsGroup             *types.GroupSetting `json:"can_resolve_topics_group,omitempty"`
+	CanSendMessageGroup               *types.GroupSetting `json:"can_send_message_group,omitempty"`
+	CanSubscribeGroup                 *types.GroupSetting `json:"can_subscribe_group,omitempty"`
 }
 
-// CreateStreamResponse represents stream creation response
-type CreateStreamResponse struct {
-	types.Response
-	Subscribed        map[string][]string `json:"subscribed,omitempty"`
-	AlreadySubscribed map[string][]string `json:"already_subscribed,omitempty"`
-	Unauthorized      []string            `json:"unauthorized,omitempty"`
+// addTo adds the settings the caller asked for to a request's parameters.
+func (s ChannelSettings) addTo(params map[string]interface{}) {
+	if s.InviteOnly != nil {
+		params["invite_only"] = *s.InviteOnly
+	}
+	if s.IsWebPublic != nil {
+		params["is_web_public"] = *s.IsWebPublic
+	}
+	if s.IsDefaultStream != nil {
+		params["is_default_stream"] = *s.IsDefaultStream
+	}
+	if s.HistoryPublicToSubscribers != nil {
+		params["history_public_to_subscribers"] = *s.HistoryPublicToSubscribers
+	}
+	if s.DefaultPushNotifications != nil {
+		params["default_push_notifications"] = *s.DefaultPushNotifications
+	}
+	if s.MessageRetentionDays != nil {
+		params["message_retention_days"] = s.MessageRetentionDays
+	}
+	if s.FolderID != nil {
+		params["folder_id"] = *s.FolderID
+	}
+	if s.TopicsPolicy != nil {
+		params["topics_policy"] = *s.TopicsPolicy
+	}
+	for name, group := range map[string]*types.GroupSetting{
+		"can_add_subscribers_group":              s.CanAddSubscribersGroup,
+		"can_administer_channel_group":           s.CanAdministerChannelGroup,
+		"can_create_topic_group":                 s.CanCreateTopicGroup,
+		"can_delete_any_message_group":           s.CanDeleteAnyMessageGroup,
+		"can_delete_own_message_group":           s.CanDeleteOwnMessageGroup,
+		"can_move_messages_out_of_channel_group": s.CanMoveMessagesOutOfChannelGroup,
+		"can_move_messages_within_channel_group": s.CanMoveMessagesWithinChannelGroup,
+		"can_remove_subscribers_group":           s.CanRemoveSubscribersGroup,
+		"can_resolve_topics_group":               s.CanResolveTopicsGroup,
+		"can_send_message_group":                 s.CanSendMessageGroup,
+		"can_subscribe_group":                    s.CanSubscribeGroup,
+	} {
+		if group != nil {
+			params[name] = group
+		}
+	}
 }
 
-// CreateStream creates one or more streams
-func (c *Client) CreateStream(req CreateStreamRequest) (*CreateStreamResponse, error) {
+// RetentionDays renders a message retention setting for the wire. Zulip reads
+// the parameter as JSON, so a number of days travels as a number while
+// "realm_default" and "unlimited" have to arrive quoted.
+func RetentionDays(value string) interface{} {
+	if days, err := strconv.Atoi(value); err == nil {
+		return days
+	}
+	return json.RawMessage(strconv.Quote(value))
+}
+
+// CreateChannelRequest represents a channel creation request
+type CreateChannelRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	// Subscribers are the user IDs to subscribe to the new channel. Empty means
+	// the caller alone, which is what creating a channel has always done.
+	Subscribers []int `json:"subscribers,omitempty"`
+	Announce    *bool `json:"announce,omitempty"`
+	ChannelSettings
+}
+
+// CreateChannelResponse represents channel creation response. The dedicated
+// endpoint returns the new channel's ID; the older path returns who ended up
+// subscribed, so which fields are filled in depends on the server.
+type CreateChannelResponse struct {
+	SubscribeResponse
+	ID int `json:"id,omitempty"`
+}
+
+// CreateChannel creates a channel and subscribes Subscribers to it, or the
+// caller alone when that list is empty. Servers from feature level 417 get the
+// dedicated endpoint; older ones fall back to creating the channel by
+// subscribing to it.
+func (c *Client) CreateChannel(req CreateChannelRequest) (*CreateChannelResponse, error) {
+	level, err := c.FeatureLevel()
+	if err != nil {
+		return nil, err
+	}
+	if level < ChannelCreateFeatureLevel {
+		return c.createChannelBySubscribing(req)
+	}
+
+	subscribers := req.Subscribers
+	if len(subscribers) == 0 {
+		profile, err := c.GetProfile()
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up your own user ID to subscribe you to the new channel: %w", err)
+		}
+		subscribers = []int{profile.UserID}
+	}
+
 	params := map[string]interface{}{
-		"subscriptions": req.Subscriptions,
+		"name":        req.Name,
+		"subscribers": subscribers,
 	}
-	if len(req.Principals) > 0 {
-		params["principals"] = req.Principals
-	}
-	if req.AuthorizationErrorsFatal != nil {
-		params["authorization_errors_fatal"] = *req.AuthorizationErrorsFatal
+	if req.Description != nil {
+		params["description"] = *req.Description
 	}
 	if req.Announce != nil {
 		params["announce"] = *req.Announce
 	}
-	if req.InviteOnly != nil {
-		params["invite_only"] = *req.InviteOnly
-	}
-	if req.IsWebPublic != nil {
-		params["is_web_public"] = *req.IsWebPublic
-	}
-	if req.HistoryPublicToSubscribers != nil {
-		params["history_public_to_subscribers"] = *req.HistoryPublicToSubscribers
-	}
-	if req.StreamPostPolicy > 0 {
-		params["stream_post_policy"] = req.StreamPostPolicy
-	}
-	if req.MessageRetentionDays != nil {
-		params["message_retention_days"] = req.MessageRetentionDays
-	}
+	req.ChannelSettings.addTo(params)
 
-	body, err := c.Post("users/me/subscriptions", params)
+	body, err := c.Post("channels/create", params)
 	if err != nil {
 		return nil, err
 	}
 
-	var resp CreateStreamResponse
+	var resp CreateChannelResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
 
 	return &resp, nil
+}
+
+// createChannelBySubscribing creates a channel the way every client had to
+// before feature level 417: by subscribing to one that does not exist yet. The
+// two endpoints take the same channel settings, so nothing is given up beyond
+// learning the new channel's ID.
+func (c *Client) createChannelBySubscribing(req CreateChannelRequest) (*CreateChannelResponse, error) {
+	sub := SubscribeRequest{
+		Announce:        req.Announce,
+		ChannelSettings: req.ChannelSettings,
+	}
+	sub.Subscriptions = append(sub.Subscriptions, ChannelSubscription{Name: req.Name})
+	if req.Description != nil {
+		sub.Subscriptions[0].Description = *req.Description
+	}
+	for _, userID := range req.Subscribers {
+		sub.Principals = append(sub.Principals, userID)
+	}
+
+	resp, err := c.Subscribe(sub)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CreateChannelResponse{SubscribeResponse: *resp}, nil
 }
 
 // UpdateStreamRequest represents a stream update request
@@ -156,8 +269,13 @@ type UpdateStreamRequest struct {
 	IsPrivate                  *bool       `json:"is_private,omitempty"`
 	IsWebPublic                *bool       `json:"is_web_public,omitempty"`
 	HistoryPublicToSubscribers *bool       `json:"history_public_to_subscribers,omitempty"`
-	StreamPostPolicy           int         `json:"stream_post_policy,omitempty"`
 	MessageRetentionDays       interface{} `json:"message_retention_days,omitempty"`
+	// CanSendMessageGroup is who may post in the channel, replacing the
+	// stream_post_policy the server dropped at feature level 333. It is sent as
+	// a plain replacement: the request says what the value should become and
+	// not what the caller believed it was, so a concurrent change is overwritten
+	// rather than reported.
+	CanSendMessageGroup *types.GroupSetting `json:"can_send_message_group,omitempty"`
 }
 
 // UpdateStream updates stream settings
@@ -178,11 +296,11 @@ func (c *Client) UpdateStream(req UpdateStreamRequest) (*types.Response, error) 
 	if req.HistoryPublicToSubscribers != nil {
 		params["history_public_to_subscribers"] = *req.HistoryPublicToSubscribers
 	}
-	if req.StreamPostPolicy > 0 {
-		params["stream_post_policy"] = req.StreamPostPolicy
-	}
 	if req.MessageRetentionDays != nil {
 		params["message_retention_days"] = req.MessageRetentionDays
+	}
+	if req.CanSendMessageGroup != nil {
+		params["can_send_message_group"] = map[string]interface{}{"new": req.CanSendMessageGroup}
 	}
 
 	body, err := c.Patch(fmt.Sprintf("streams/%d", req.StreamID), params)
@@ -307,23 +425,33 @@ func (c *Client) GetSubscriptions(req GetSubscriptionsRequest) (*GetSubscription
 	return &resp, nil
 }
 
-// SubscribeRequest represents a subscription request
-type SubscribeRequest struct {
-	Subscriptions []struct {
-		Name        string `json:"name"`
-		Description string `json:"description,omitempty"`
-	} `json:"subscriptions"`
-	Principals                 []interface{} `json:"principals,omitempty"`
-	AuthorizationErrorsFatal   *bool         `json:"authorization_errors_fatal,omitempty"`
-	Announce                   *bool         `json:"announce,omitempty"`
-	InviteOnly                 *bool         `json:"invite_only,omitempty"`
-	HistoryPublicToSubscribers *bool         `json:"history_public_to_subscribers,omitempty"`
-	StreamPostPolicy           int           `json:"stream_post_policy,omitempty"`
-	MessageRetentionDays       interface{}   `json:"message_retention_days,omitempty"`
+// ChannelSubscription names a channel to subscribe to, creating it with the
+// given description if it does not exist yet.
+type ChannelSubscription struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
-// Subscribe subscribes users to streams
-func (c *Client) Subscribe(req SubscribeRequest) (*CreateStreamResponse, error) {
+// SubscribeRequest represents a subscription request. The channel settings
+// apply only to channels the request creates.
+type SubscribeRequest struct {
+	Subscriptions            []ChannelSubscription `json:"subscriptions"`
+	Principals               []interface{}         `json:"principals,omitempty"`
+	AuthorizationErrorsFatal *bool                 `json:"authorization_errors_fatal,omitempty"`
+	Announce                 *bool                 `json:"announce,omitempty"`
+	ChannelSettings
+}
+
+// SubscribeResponse represents subscription response
+type SubscribeResponse struct {
+	types.Response
+	Subscribed        map[string][]string `json:"subscribed,omitempty"`
+	AlreadySubscribed map[string][]string `json:"already_subscribed,omitempty"`
+	Unauthorized      []string            `json:"unauthorized,omitempty"`
+}
+
+// Subscribe subscribes users to channels, creating any that do not exist
+func (c *Client) Subscribe(req SubscribeRequest) (*SubscribeResponse, error) {
 	params := map[string]interface{}{
 		"subscriptions": req.Subscriptions,
 	}
@@ -336,25 +464,14 @@ func (c *Client) Subscribe(req SubscribeRequest) (*CreateStreamResponse, error) 
 	if req.Announce != nil {
 		params["announce"] = *req.Announce
 	}
-	if req.InviteOnly != nil {
-		params["invite_only"] = *req.InviteOnly
-	}
-	if req.HistoryPublicToSubscribers != nil {
-		params["history_public_to_subscribers"] = *req.HistoryPublicToSubscribers
-	}
-	if req.StreamPostPolicy > 0 {
-		params["stream_post_policy"] = req.StreamPostPolicy
-	}
-	if req.MessageRetentionDays != nil {
-		params["message_retention_days"] = req.MessageRetentionDays
-	}
+	req.ChannelSettings.addTo(params)
 
 	body, err := c.Post("users/me/subscriptions", params)
 	if err != nil {
 		return nil, err
 	}
 
-	var resp CreateStreamResponse
+	var resp SubscribeResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}

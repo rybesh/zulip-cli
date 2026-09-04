@@ -185,20 +185,65 @@ func TestRequestParameters(t *testing.T) {
 			want: url.Values{"stream_id": {"2"}, "propagate_mode": {"change_all"}},
 		},
 		{
-			name: "create channel: false is sent as false",
+			name: "subscribe: false is sent as false",
 			do: func(c *Client) error {
-				req := CreateStreamRequest{InviteOnly: &no}
-				req.Subscriptions = append(req.Subscriptions, struct {
-					Name        string `json:"name"`
-					Description string `json:"description,omitempty"`
-				}{Name: "engineering"})
-				_, err := c.CreateStream(req)
+				req := SubscribeRequest{
+					Subscriptions:   []ChannelSubscription{{Name: "engineering"}},
+					ChannelSettings: ChannelSettings{InviteOnly: &no},
+				}
+				_, err := c.Subscribe(req)
 				return err
 			},
 			want: url.Values{
 				"subscriptions": {`[{"name":"engineering"}]`},
 				"invite_only":   {"false"},
 			},
+		},
+		{
+			name: "subscribe: a group-setting value is sent as a bare group ID",
+			do: func(c *Client) error {
+				req := SubscribeRequest{
+					Subscriptions: []ChannelSubscription{{Name: "engineering"}},
+					ChannelSettings: ChannelSettings{
+						CanSendMessageGroup: types.NamedGroup(15),
+						CanAddSubscribersGroup: types.AnonymousGroup(
+							[]int{10}, []int{11}),
+					},
+				}
+				_, err := c.Subscribe(req)
+				return err
+			},
+			want: url.Values{
+				"subscriptions":             {`[{"name":"engineering"}]`},
+				"can_send_message_group":    {"15"},
+				"can_add_subscribers_group": {`{"direct_members":[10],"direct_subgroups":[11]}`},
+			},
+		},
+		{
+			name: "subscribe: retention days travel as JSON",
+			do: func(c *Client) error {
+				req := SubscribeRequest{
+					Subscriptions:   []ChannelSubscription{{Name: "engineering"}},
+					ChannelSettings: ChannelSettings{MessageRetentionDays: RetentionDays("unlimited")},
+				}
+				_, err := c.Subscribe(req)
+				return err
+			},
+			want: url.Values{
+				"subscriptions":          {`[{"name":"engineering"}]`},
+				"message_retention_days": {`"unlimited"`},
+			},
+		},
+		{
+			name: "update channel: who may post is sent as a group-setting update",
+			do: func(c *Client) error {
+				_, err := c.UpdateStream(UpdateStreamRequest{
+					StreamID:            1,
+					CanSendMessageGroup: types.NamedGroup(15),
+				})
+				return err
+			},
+			want: url.Values{"can_send_message_group": {`{"new":15}`}},
 		},
 	}
 

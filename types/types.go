@@ -1,6 +1,10 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // Response is the common response structure from Zulip API
 type Response struct {
@@ -104,11 +108,21 @@ type Stream struct {
 	InviteOnly                 bool   `json:"invite_only"`
 	RenderedDescription        string `json:"rendered_description,omitempty"`
 	IsWebPublic                bool   `json:"is_web_public"`
-	StreamPostPolicy           int    `json:"stream_post_policy"`
 	MessageRetentionDays       *int   `json:"message_retention_days"`
 	HistoryPublicToSubscribers bool   `json:"history_public_to_subscribers"`
 	FirstMessageID             *int   `json:"first_message_id"`
-	IsAnnouncementOnly         bool   `json:"is_announcement_only"`
+	TopicsPolicy               string `json:"topics_policy,omitempty"`
+	FolderID                   *int   `json:"folder_id,omitempty"`
+	// CanSendMessageGroup is who may post in the channel. Servers older than
+	// feature level 333 do not send it; there the deprecated fields below are
+	// the only answer available.
+	CanSendMessageGroup *GroupSetting `json:"can_send_message_group,omitempty"`
+	// StreamPostPolicy and IsAnnouncementOnly are deprecated. Since feature
+	// level 333 the server computes them from CanSendMessageGroup as the
+	// closest enclosing role, so they are an approximation of who may post and
+	// not the setting itself. They cannot be sent back to the server.
+	StreamPostPolicy   int  `json:"stream_post_policy"`
+	IsAnnouncementOnly bool `json:"is_announcement_only"`
 }
 
 // Subscription represents a user's subscription to a stream
@@ -224,4 +238,62 @@ type ServerSettings struct {
 	RealmName                   string `json:"realm_name,omitempty"`
 	RealmIcon                   string `json:"realm_icon,omitempty"`
 	RealmDescription            string `json:"realm_description,omitempty"`
+}
+
+// GroupSetting is a value for one of Zulip's group-based permission settings,
+// such as can_send_message_group. It is either the ID of a user group — a
+// named one or a role:* system group — or an anonymous group, meaning the union
+// of some users and some groups. See https://zulip.com/api/group-setting-values.
+type GroupSetting struct {
+	// GroupID names a single user group. When it is nil the value is the
+	// anonymous group described by the other two fields.
+	GroupID         *int
+	DirectMembers   []int
+	DirectSubgroups []int
+}
+
+// NamedGroup returns a group-setting value naming a single user group.
+func NamedGroup(id int) *GroupSetting {
+	return &GroupSetting{GroupID: &id}
+}
+
+// AnonymousGroup returns a group-setting value covering the given users and
+// groups without creating a user group to hold them.
+func AnonymousGroup(members, subgroups []int) *GroupSetting {
+	return &GroupSetting{DirectMembers: members, DirectSubgroups: subgroups}
+}
+
+// anonymousGroup is the wire form of a group-setting value that is not a bare
+// group ID. Both lists are always sent, since the server expects both.
+type anonymousGroup struct {
+	DirectMembers   []int `json:"direct_members"`
+	DirectSubgroups []int `json:"direct_subgroups"`
+}
+
+func (g GroupSetting) MarshalJSON() ([]byte, error) {
+	if g.GroupID != nil {
+		return json.Marshal(*g.GroupID)
+	}
+	wire := anonymousGroup{DirectMembers: g.DirectMembers, DirectSubgroups: g.DirectSubgroups}
+	if wire.DirectMembers == nil {
+		wire.DirectMembers = []int{}
+	}
+	if wire.DirectSubgroups == nil {
+		wire.DirectSubgroups = []int{}
+	}
+	return json.Marshal(wire)
+}
+
+func (g *GroupSetting) UnmarshalJSON(data []byte) error {
+	var id int
+	if err := json.Unmarshal(data, &id); err == nil {
+		*g = GroupSetting{GroupID: &id}
+		return nil
+	}
+	var wire anonymousGroup
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return fmt.Errorf("group-setting value is neither a group ID nor an anonymous group: %s", data)
+	}
+	*g = GroupSetting{DirectMembers: wire.DirectMembers, DirectSubgroups: wire.DirectSubgroups}
+	return nil
 }

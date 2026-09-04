@@ -225,6 +225,19 @@ func boolFlag(cmd *cobra.Command, name string) *bool {
 	return &value
 }
 
+// intFlag is boolFlag for integers, so that a zero the user typed is told
+// apart from a flag they never mentioned.
+func intFlag(cmd *cobra.Command, name string) *int {
+	if !cmd.Flags().Changed(name) {
+		return nil
+	}
+	value, err := cmd.Flags().GetInt(name)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
 // stringFlag is boolFlag for strings, so that --description "" clears a value
 // instead of meaning "leave it alone".
 func stringFlag(cmd *cobra.Command, name string) *string {

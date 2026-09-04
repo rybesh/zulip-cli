@@ -167,7 +167,7 @@ type Message struct {
 	Submessages       []interface{} `json:"submessages,omitempty"`
 	ClientID          string        `json:"client,omitempty"`
 	ContentType       string        `json:"content_type,omitempty"`
-	IsMeMessage       bool          `json:"is_me_message,omitempty"`
+	IsMeMessage       bool          `json:"is_me_message"`
 	LastEditTimestamp *int64        `json:"last_edit_timestamp,omitempty"`
 	MatchContent      string        `json:"match_content,omitempty"`
 	MatchSubject      string        `json:"match_subject,omitempty"`
@@ -183,7 +183,12 @@ type Reaction struct {
 	UserID       int       `json:"user_id"`
 }
 
-// User represents a Zulip user
+// User represents a Zulip user.
+//
+// The boolean fields carry no omitempty: false is an answer, and dropping it
+// leaves a caller unable to tell "this user is not a guest" from "the server
+// never said". It also breaks the obvious jq, since a missing field is null
+// rather than false and .is_guest == false matches nothing.
 type User struct {
 	UserID        int                    `json:"user_id"`
 	DeliveryEmail string                 `json:"delivery_email,omitempty"`
@@ -191,9 +196,9 @@ type User struct {
 	FullName      string                 `json:"full_name"`
 	DateJoined    string                 `json:"date_joined,omitempty"`
 	IsActive      bool                   `json:"is_active"`
-	IsOwner       bool                   `json:"is_owner,omitempty"`
-	IsAdmin       bool                   `json:"is_admin,omitempty"`
-	IsGuest       bool                   `json:"is_guest,omitempty"`
+	IsOwner       bool                   `json:"is_owner"`
+	IsAdmin       bool                   `json:"is_admin"`
+	IsGuest       bool                   `json:"is_guest"`
 	Role          int                    `json:"role,omitempty"`
 	IsBot         bool                   `json:"is_bot"`
 	BotType       *int                   `json:"bot_type,omitempty"`
@@ -271,7 +276,7 @@ type UserGroup struct {
 	Name          string `json:"name"`
 	Description   string `json:"description"`
 	Members       []int  `json:"members"`
-	IsSystemGroup bool   `json:"is_system_group,omitempty"`
+	IsSystemGroup bool   `json:"is_system_group"`
 }
 
 // Narrow represents a message filter
@@ -285,7 +290,7 @@ type Presence struct {
 	Client    string `json:"client,omitempty"`
 	Status    string `json:"status"`
 	Timestamp int64  `json:"timestamp"`
-	Pushable  bool   `json:"pushable,omitempty"`
+	Pushable  bool   `json:"pushable"`
 }
 
 // UserPresence is the presence a server reports for one user. The two
@@ -372,7 +377,7 @@ type ProfileField struct {
 	Name                    string `json:"name"`
 	Hint                    string `json:"hint"`
 	FieldData               string `json:"field_data,omitempty"`
-	DisplayInProfileSummary bool   `json:"display_in_profile_summary,omitempty"`
+	DisplayInProfileSummary bool   `json:"display_in_profile_summary"`
 }
 
 // Attachment represents an uploaded file
@@ -404,9 +409,9 @@ type ServerSettings struct {
 	ZulipVersion                string `json:"zulip_version"`
 	ZulipFeatureLevel           int    `json:"zulip_feature_level"`
 	PushNotificationsEnabled    bool   `json:"push_notifications_enabled"`
-	IsIncompatible              bool   `json:"is_incompatible,omitempty"`
-	EmailAuthEnabled            bool   `json:"email_auth_enabled,omitempty"`
-	RequireEmailFormatUsernames bool   `json:"require_email_format_usernames,omitempty"`
+	IsIncompatible              bool   `json:"is_incompatible"`
+	EmailAuthEnabled            bool   `json:"email_auth_enabled"`
+	RequireEmailFormatUsernames bool   `json:"require_email_format_usernames"`
 	RealmURI                    string `json:"realm_uri,omitempty"`
 	RealmName                   string `json:"realm_name,omitempty"`
 	RealmIcon                   string `json:"realm_icon,omitempty"`

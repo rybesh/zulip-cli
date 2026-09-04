@@ -137,10 +137,13 @@ func (c *Client) CreateUser(req CreateUserRequest) (*CreateUserResponse, error) 
 
 // UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
-	UserID      int                    `json:"user_id"`
-	FullName    *string                `json:"full_name,omitempty"`
-	Role        int                    `json:"role,omitempty"`
-	ProfileData map[string]interface{} `json:"profile_data,omitempty"`
+	UserID   int     `json:"user_id"`
+	FullName *string `json:"full_name,omitempty"`
+	Role     int     `json:"role,omitempty"`
+	// ProfileData is a list of {"id", "value"} pairs naming the custom profile
+	// fields to set. It is a list and not a map because that is what the server
+	// reads: a map keyed by field ID is rejected.
+	ProfileData []map[string]interface{} `json:"profile_data,omitempty"`
 }
 
 // UpdateUser updates a user

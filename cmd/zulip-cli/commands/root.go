@@ -157,6 +157,9 @@ func init() {
 	rootCmd.AddCommand(listSubscribersCmd)
 	rootCmd.AddCommand(muteTopicCmd)
 	rootCmd.AddCommand(unmuteTopicCmd)
+	rootCmd.AddCommand(followTopicCmd)
+	rootCmd.AddCommand(unfollowTopicCmd)
+	rootCmd.AddCommand(setTopicVisibilityCmd)
 	rootCmd.AddCommand(moveTopicCmd)
 
 	rootCmd.AddCommand(listUsersCmd)

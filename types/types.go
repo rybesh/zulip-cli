@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,67 @@ const (
 	ChangeAll   EditPropagateMode = "change_all"
 	ChangeLater EditPropagateMode = "change_later"
 )
+
+// TopicVisibilityPolicy is a user's personal preference for one topic. Zulip
+// sends it as an integer, and the zero value is the absence of a preference.
+type TopicVisibilityPolicy int
+
+const (
+	// VisibilityInherit removes any policy set for the topic, leaving it to
+	// follow whatever the channel does.
+	VisibilityInherit TopicVisibilityPolicy = 0
+	// VisibilityMuted hides the topic.
+	VisibilityMuted TopicVisibilityPolicy = 1
+	// VisibilityUnmuted shows the topic even though its channel is muted. In
+	// an unmuted channel it does the same thing as VisibilityInherit.
+	VisibilityUnmuted TopicVisibilityPolicy = 2
+	// VisibilityFollowed follows the topic.
+	VisibilityFollowed TopicVisibilityPolicy = 3
+)
+
+// TopicVisibilityPolicies lists the policies in the order they are documented,
+// for help text and error messages.
+var TopicVisibilityPolicies = []TopicVisibilityPolicy{
+	VisibilityInherit, VisibilityMuted, VisibilityUnmuted, VisibilityFollowed,
+}
+
+// String names the policy the way ParseTopicVisibilityPolicy reads it back.
+func (p TopicVisibilityPolicy) String() string {
+	switch p {
+	case VisibilityInherit:
+		return "inherit"
+	case VisibilityMuted:
+		return "muted"
+	case VisibilityUnmuted:
+		return "unmuted"
+	case VisibilityFollowed:
+		return "followed"
+	default:
+		return fmt.Sprintf("visibility policy %d", int(p))
+	}
+}
+
+// ParseTopicVisibilityPolicy turns what someone typed into a policy. "none" is
+// accepted for inherit, since that is what the API documentation calls it.
+func ParseTopicVisibilityPolicy(value string) (TopicVisibilityPolicy, error) {
+	switch strings.ToLower(value) {
+	case "inherit", "none":
+		return VisibilityInherit, nil
+	case "muted":
+		return VisibilityMuted, nil
+	case "unmuted":
+		return VisibilityUnmuted, nil
+	case "followed":
+		return VisibilityFollowed, nil
+	}
+
+	names := make([]string, 0, len(TopicVisibilityPolicies))
+	for _, policy := range TopicVisibilityPolicies {
+		names = append(names, policy.String())
+	}
+	return VisibilityInherit, fmt.Errorf(
+		"unknown visibility policy %q: it must be one of %s", value, strings.Join(names, ", "))
+}
 
 // EmojiType specifies the type of emoji
 type EmojiType string

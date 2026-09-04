@@ -217,10 +217,24 @@ type Stream struct {
 	FirstMessageID             *int   `json:"first_message_id"`
 	TopicsPolicy               string `json:"topics_policy,omitempty"`
 	FolderID                   *int   `json:"folder_id,omitempty"`
-	// CanSendMessageGroup is who may post in the channel. Servers older than
+	// The can_*_group settings are who may do what in the channel. A server
+	// that predates one of them leaves it out, so a nil field means the server
+	// did not say rather than that nobody may.
+	//
+	// CanSendMessageGroup in particular is who may post. Servers older than
 	// feature level 333 do not send it; there the deprecated fields below are
 	// the only answer available.
-	CanSendMessageGroup *GroupSetting `json:"can_send_message_group,omitempty"`
+	CanAddSubscribersGroup            *GroupSetting `json:"can_add_subscribers_group,omitempty"`
+	CanAdministerChannelGroup         *GroupSetting `json:"can_administer_channel_group,omitempty"`
+	CanCreateTopicGroup               *GroupSetting `json:"can_create_topic_group,omitempty"`
+	CanDeleteAnyMessageGroup          *GroupSetting `json:"can_delete_any_message_group,omitempty"`
+	CanDeleteOwnMessageGroup          *GroupSetting `json:"can_delete_own_message_group,omitempty"`
+	CanMoveMessagesOutOfChannelGroup  *GroupSetting `json:"can_move_messages_out_of_channel_group,omitempty"`
+	CanMoveMessagesWithinChannelGroup *GroupSetting `json:"can_move_messages_within_channel_group,omitempty"`
+	CanRemoveSubscribersGroup         *GroupSetting `json:"can_remove_subscribers_group,omitempty"`
+	CanResolveTopicsGroup             *GroupSetting `json:"can_resolve_topics_group,omitempty"`
+	CanSendMessageGroup               *GroupSetting `json:"can_send_message_group,omitempty"`
+	CanSubscribeGroup                 *GroupSetting `json:"can_subscribe_group,omitempty"`
 	// StreamPostPolicy and IsAnnouncementOnly are deprecated. Since feature
 	// level 333 the server computes them from CanSendMessageGroup as the
 	// closest enclosing role, so they are an approximation of who may post and

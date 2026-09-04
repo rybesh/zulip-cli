@@ -171,6 +171,7 @@ func init() {
 	rootCmd.AddCommand(getStreamEmailAddressCmd)
 	rootCmd.AddCommand(updateSubscriptionCmd)
 	rootCmd.AddCommand(addDefaultStreamCmd)
+	rootCmd.AddCommand(removeDefaultStreamCmd)
 
 	rootCmd.AddCommand(listUsersCmd)
 	rootCmd.AddCommand(getUserCmd)

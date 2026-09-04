@@ -274,8 +274,9 @@ zulip-cli update-subscription engineering --is-muted=false
 # Get the address that emails messages into a channel
 zulip-cli get-channel-email-address engineering
 
-# Subscribe new users to a channel automatically
+# Subscribe new users to a channel automatically, and stop doing so
 zulip-cli add-default-channel engineering
+zulip-cli remove-default-channel engineering
 
 # Mute a topic, by channel name or by channel ID
 zulip-cli mute-topic general "off-topic"

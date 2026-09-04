@@ -116,14 +116,23 @@ const ChannelCreateFeatureLevel = 417
 // Several of them were added after the settings themselves, so an older server
 // will ignore some — which it reports, and the client warns about.
 type ChannelSettings struct {
-	InviteOnly                        *bool               `json:"invite_only,omitempty"`
-	IsWebPublic                       *bool               `json:"is_web_public,omitempty"`
-	IsDefaultStream                   *bool               `json:"is_default_stream,omitempty"`
-	HistoryPublicToSubscribers        *bool               `json:"history_public_to_subscribers,omitempty"`
-	DefaultPushNotifications          *bool               `json:"default_push_notifications,omitempty"`
-	MessageRetentionDays              interface{}         `json:"message_retention_days,omitempty"`
-	FolderID                          *int                `json:"folder_id,omitempty"`
-	TopicsPolicy                      *string             `json:"topics_policy,omitempty"`
+	InviteOnly                 *bool       `json:"invite_only,omitempty"`
+	IsWebPublic                *bool       `json:"is_web_public,omitempty"`
+	IsDefaultStream            *bool       `json:"is_default_stream,omitempty"`
+	HistoryPublicToSubscribers *bool       `json:"history_public_to_subscribers,omitempty"`
+	DefaultPushNotifications   *bool       `json:"default_push_notifications,omitempty"`
+	MessageRetentionDays       interface{} `json:"message_retention_days,omitempty"`
+	FolderID                   *int        `json:"folder_id,omitempty"`
+	TopicsPolicy               *string     `json:"topics_policy,omitempty"`
+	ChannelPermissions
+}
+
+// ChannelPermissions are the group-based permission settings of a channel:
+// who may administer it, post in it, move its messages, and so on. Creating a
+// channel and updating one accept the same set, so both embed this; they
+// differ only in how the values travel, which is what each and eachUpdate are
+// for. See types.GroupSetting.
+type ChannelPermissions struct {
 	CanAddSubscribersGroup            *types.GroupSetting `json:"can_add_subscribers_group,omitempty"`
 	CanAdministerChannelGroup         *types.GroupSetting `json:"can_administer_channel_group,omitempty"`
 	CanCreateTopicGroup               *types.GroupSetting `json:"can_create_topic_group,omitempty"`
@@ -135,6 +144,47 @@ type ChannelSettings struct {
 	CanResolveTopicsGroup             *types.GroupSetting `json:"can_resolve_topics_group,omitempty"`
 	CanSendMessageGroup               *types.GroupSetting `json:"can_send_message_group,omitempty"`
 	CanSubscribeGroup                 *types.GroupSetting `json:"can_subscribe_group,omitempty"`
+}
+
+// each pairs every permission the caller set with the parameter it travels as.
+func (p ChannelPermissions) each() map[string]*types.GroupSetting {
+	set := map[string]*types.GroupSetting{}
+	for name, group := range map[string]*types.GroupSetting{
+		"can_add_subscribers_group":              p.CanAddSubscribersGroup,
+		"can_administer_channel_group":           p.CanAdministerChannelGroup,
+		"can_create_topic_group":                 p.CanCreateTopicGroup,
+		"can_delete_any_message_group":           p.CanDeleteAnyMessageGroup,
+		"can_delete_own_message_group":           p.CanDeleteOwnMessageGroup,
+		"can_move_messages_out_of_channel_group": p.CanMoveMessagesOutOfChannelGroup,
+		"can_move_messages_within_channel_group": p.CanMoveMessagesWithinChannelGroup,
+		"can_remove_subscribers_group":           p.CanRemoveSubscribersGroup,
+		"can_resolve_topics_group":               p.CanResolveTopicsGroup,
+		"can_send_message_group":                 p.CanSendMessageGroup,
+		"can_subscribe_group":                    p.CanSubscribeGroup,
+	} {
+		if group != nil {
+			set[name] = group
+		}
+	}
+	return set
+}
+
+// addTo adds the permissions the caller set to a channel-creation request,
+// where each one is sent as a bare group-setting value.
+func (p ChannelPermissions) addTo(params map[string]interface{}) {
+	for name, group := range p.each() {
+		params[name] = group
+	}
+}
+
+// addUpdatesTo adds the permissions the caller set to a channel-update
+// request. Updating one is a plain replacement: the request says what the
+// value should become and not what the caller believed it was, so a concurrent
+// change is overwritten rather than reported.
+func (p ChannelPermissions) addUpdatesTo(params map[string]interface{}) {
+	for name, group := range p.each() {
+		params[name] = map[string]interface{}{"new": group}
+	}
 }
 
 // addTo adds the settings the caller asked for to a request's parameters.
@@ -161,25 +211,11 @@ func (s ChannelSettings) addTo(params map[string]interface{}) {
 		params["folder_id"] = *s.FolderID
 	}
 	if s.TopicsPolicy != nil {
-		params["topics_policy"] = *s.TopicsPolicy
+		// Read as JSON by the server, like message_retention_days, so the name
+		// of the policy has to arrive quoted.
+		params["topics_policy"] = json.RawMessage(strconv.Quote(*s.TopicsPolicy))
 	}
-	for name, group := range map[string]*types.GroupSetting{
-		"can_add_subscribers_group":              s.CanAddSubscribersGroup,
-		"can_administer_channel_group":           s.CanAdministerChannelGroup,
-		"can_create_topic_group":                 s.CanCreateTopicGroup,
-		"can_delete_any_message_group":           s.CanDeleteAnyMessageGroup,
-		"can_delete_own_message_group":           s.CanDeleteOwnMessageGroup,
-		"can_move_messages_out_of_channel_group": s.CanMoveMessagesOutOfChannelGroup,
-		"can_move_messages_within_channel_group": s.CanMoveMessagesWithinChannelGroup,
-		"can_remove_subscribers_group":           s.CanRemoveSubscribersGroup,
-		"can_resolve_topics_group":               s.CanResolveTopicsGroup,
-		"can_send_message_group":                 s.CanSendMessageGroup,
-		"can_subscribe_group":                    s.CanSubscribeGroup,
-	} {
-		if group != nil {
-			params[name] = group
-		}
-	}
+	s.ChannelPermissions.addTo(params)
 }
 
 // RetentionDays renders a message retention setting for the wire. Zulip reads
@@ -292,12 +328,9 @@ type UpdateStreamRequest struct {
 	IsWebPublic                *bool       `json:"is_web_public,omitempty"`
 	HistoryPublicToSubscribers *bool       `json:"history_public_to_subscribers,omitempty"`
 	MessageRetentionDays       interface{} `json:"message_retention_days,omitempty"`
-	// CanSendMessageGroup is who may post in the channel, replacing the
-	// stream_post_policy the server dropped at feature level 333. It is sent as
-	// a plain replacement: the request says what the value should become and
-	// not what the caller believed it was, so a concurrent change is overwritten
-	// rather than reported.
-	CanSendMessageGroup *types.GroupSetting `json:"can_send_message_group,omitempty"`
+	// ChannelPermissions is who may do what in the channel. CanSendMessageGroup
+	// replaces the stream_post_policy the server dropped at feature level 333.
+	ChannelPermissions
 }
 
 // UpdateStream updates stream settings
@@ -321,9 +354,7 @@ func (c *Client) UpdateStream(req UpdateStreamRequest) (*types.Response, error) 
 	if req.MessageRetentionDays != nil {
 		params["message_retention_days"] = req.MessageRetentionDays
 	}
-	if req.CanSendMessageGroup != nil {
-		params["can_send_message_group"] = map[string]interface{}{"new": req.CanSendMessageGroup}
-	}
+	req.ChannelPermissions.addUpdatesTo(params)
 
 	body, err := c.Patch(fmt.Sprintf("streams/%d", req.StreamID), params)
 	if err != nil {
@@ -677,6 +708,25 @@ func (c *Client) AddDefaultStream(streamID int) (*types.Response, error) {
 	}
 
 	body, err := c.Post("default_streams", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp types.Response
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// RemoveDefaultStream removes a stream from the default streams
+func (c *Client) RemoveDefaultStream(streamID int) (*types.Response, error) {
+	params := map[string]interface{}{
+		"stream_id": streamID,
+	}
+
+	body, err := c.Delete("default_streams", params)
 	if err != nil {
 		return nil, err
 	}

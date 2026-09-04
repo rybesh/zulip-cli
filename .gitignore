@@ -23,6 +23,7 @@ dist/
 build/
 
 # IDE files
+.sprite
 .vscode/
 .idea/
 *.swp

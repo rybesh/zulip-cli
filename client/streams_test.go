@@ -30,7 +30,7 @@ func TestCreateChannelUsesTheDedicatedEndpoint(t *testing.T) {
 	resp, err := c.CreateChannel(CreateChannelRequest{
 		Name:            "music",
 		Description:     &description,
-		ChannelSettings: ChannelSettings{CanSendMessageGroup: types.NamedGroup(15)},
+		ChannelSettings: ChannelSettings{ChannelPermissions: ChannelPermissions{CanSendMessageGroup: types.NamedGroup(15)}},
 	})
 	if err != nil {
 		t.Fatalf("CreateChannel: %v", err)
@@ -89,7 +89,7 @@ func TestCreateChannelFallsBackToSubscribing(t *testing.T) {
 		Name:            "music",
 		Description:     &description,
 		Subscribers:     []int{17},
-		ChannelSettings: ChannelSettings{CanSendMessageGroup: types.NamedGroup(15)},
+		ChannelSettings: ChannelSettings{ChannelPermissions: ChannelPermissions{CanSendMessageGroup: types.NamedGroup(15)}},
 	}); err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}

@@ -104,10 +104,19 @@ var createStreamCmd = &cobra.Command{
 
 // updateChannelFlags are the settings update-channel can change. A request
 // that names none of them is a mistake worth catching before it is sent.
-var updateChannelFlags = []string{
+var updateChannelFlags = append([]string{
 	"description", "new-name", "invite-only", "is-web-public",
 	"history-public-to-subscribers", "message-retention-days",
-	"can-send-message-group",
+}, channelPermissionFlagNames()...)
+
+// channelPermissionFlagNames lists the group-setting flags by name, for the
+// places that care which flags exist rather than what they fill.
+func channelPermissionFlagNames() []string {
+	names := make([]string, 0, len(channelPermissionFlags))
+	for _, permission := range channelPermissionFlags {
+		names = append(names, permission.name)
+	}
+	return names
 }
 
 var updateStreamCmd = &cobra.Command{
@@ -154,12 +163,9 @@ existing history from the two together.`,
 			req.MessageRetentionDays = client.RetentionDays(*days)
 		}
 
-		if postingGroup := stringFlag(cmd, "can-send-message-group"); postingGroup != nil {
-			group, err := (&groupResolver{client: zulipClient}).resolve(*postingGroup)
-			if err != nil {
-				return fmt.Errorf("--can-send-message-group: %w", err)
-			}
-			req.CanSendMessageGroup = group
+		groups := &groupResolver{client: zulipClient}
+		if err := channelPermissions(cmd, groups, &req.ChannelPermissions); err != nil {
+			return err
 		}
 
 		resp, err := zulipClient.UpdateStream(req)
@@ -464,6 +470,30 @@ a channel name.`,
 	},
 }
 
+var removeDefaultStreamCmd = &cobra.Command{
+	Use:     "remove-default-channel [channel]",
+	Aliases: []string{"remove-default-stream"},
+	Short:   "Stop subscribing new users to a channel automatically",
+	Long: `Remove a channel from the organization's default channels.
+
+New users are no longer subscribed to it when they join; everyone already
+subscribed stays subscribed. The channel is a channel ID or a channel name.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		streamID, err := resolveChannelID(zulipClient, args[0])
+		if err != nil {
+			return err
+		}
+
+		resp, err := zulipClient.RemoveDefaultStream(streamID)
+		if err != nil {
+			return err
+		}
+
+		return printResult(resp)
+	},
+}
+
 var listSubscriptionsCmd = &cobra.Command{
 	Use:   "list-subscriptions",
 	Short: "List user's channel subscriptions",
@@ -627,8 +657,7 @@ func init() {
 		"Share history with users who subscribe later")
 	updateStreamCmd.Flags().String("message-retention-days", "",
 		`Days to keep messages, or "realm_default" or "unlimited"`)
-	updateStreamCmd.Flags().String("can-send-message-group", "",
-		"Who may post in the channel"+groupFlagHelp)
+	addChannelPermissionFlags(updateStreamCmd)
 
 	subscribeCmd.Flags().String("description", "", "Channel description (for new channels)")
 	subscribeCmd.Flags().Bool("announce", false, "Announce any channel this creates")
@@ -658,30 +687,55 @@ func init() {
 var channelPermissionFlags = []struct {
 	name  string
 	help  string
-	field func(*client.ChannelSettings) **types.GroupSetting
+	field func(*client.ChannelPermissions) **types.GroupSetting
 }{
 	{"can-add-subscribers-group", "Who may add subscribers to the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanAddSubscribersGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanAddSubscribersGroup }},
 	{"can-administer-channel-group", "Who may administer the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanAdministerChannelGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanAdministerChannelGroup }},
 	{"can-create-topic-group", "Who may start a new topic in the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanCreateTopicGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanCreateTopicGroup }},
 	{"can-delete-any-message-group", "Who may delete any message in the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanDeleteAnyMessageGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanDeleteAnyMessageGroup }},
 	{"can-delete-own-message-group", "Who may delete their own messages in the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanDeleteOwnMessageGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanDeleteOwnMessageGroup }},
 	{"can-move-messages-out-of-channel-group", "Who may move messages to another channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanMoveMessagesOutOfChannelGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanMoveMessagesOutOfChannelGroup }},
 	{"can-move-messages-within-channel-group", "Who may move messages between topics",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanMoveMessagesWithinChannelGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanMoveMessagesWithinChannelGroup }},
 	{"can-remove-subscribers-group", "Who may remove subscribers from the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanRemoveSubscribersGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanRemoveSubscribersGroup }},
 	{"can-resolve-topics-group", "Who may resolve topics in the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanResolveTopicsGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanResolveTopicsGroup }},
 	{"can-send-message-group", "Who may post in the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanSendMessageGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanSendMessageGroup }},
 	{"can-subscribe-group", "Who may subscribe themselves to the channel",
-		func(s *client.ChannelSettings) **types.GroupSetting { return &s.CanSubscribeGroup }},
+		func(p *client.ChannelPermissions) **types.GroupSetting { return &p.CanSubscribeGroup }},
+}
+
+// addChannelPermissionFlags registers the group-setting flags on a command.
+func addChannelPermissionFlags(cmd *cobra.Command) {
+	for _, permission := range channelPermissionFlags {
+		cmd.Flags().String(permission.name, "", permission.help+groupFlagHelp)
+	}
+}
+
+// channelPermissions reads the group-setting flags the user actually set,
+// resolving group names against the server so nothing is sent until every flag
+// makes sense.
+func channelPermissions(cmd *cobra.Command, groups *groupResolver, into *client.ChannelPermissions) error {
+	for _, permission := range channelPermissionFlags {
+		value := stringFlag(cmd, permission.name)
+		if value == nil {
+			continue
+		}
+		group, err := groups.resolve(*value)
+		if err != nil {
+			return fmt.Errorf("--%s: %w", permission.name, err)
+		}
+		*permission.field(into) = group
+	}
+	return nil
 }
 
 // groupFlagHelp explains what a group-setting flag accepts. The role:* groups
@@ -701,9 +755,7 @@ func addChannelSettingFlags(cmd *cobra.Command) {
 	cmd.Flags().String("topics-policy", "",
 		`Topics allowed: inherit, allow_empty_topic, disable_empty_topic, or empty_topic_only`)
 
-	for _, permission := range channelPermissionFlags {
-		cmd.Flags().String(permission.name, "", permission.help+groupFlagHelp)
-	}
+	addChannelPermissionFlags(cmd)
 }
 
 // addPrincipalsFlag registers the people a subscription change is about. The
@@ -731,16 +783,8 @@ func channelSettings(cmd *cobra.Command, groups *groupResolver) (client.ChannelS
 		settings.MessageRetentionDays = client.RetentionDays(*days)
 	}
 
-	for _, permission := range channelPermissionFlags {
-		value := stringFlag(cmd, permission.name)
-		if value == nil {
-			continue
-		}
-		group, err := groups.resolve(*value)
-		if err != nil {
-			return settings, fmt.Errorf("--%s: %w", permission.name, err)
-		}
-		*permission.field(&settings) = group
+	if err := channelPermissions(cmd, groups, &settings.ChannelPermissions); err != nil {
+		return settings, err
 	}
 
 	return settings, nil

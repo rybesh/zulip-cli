@@ -628,7 +628,7 @@ func TestCreateChannelResolvesGroupNames(t *testing.T) {
 		"subscribers":                  {"[8]"},
 		"can_send_message_group":       {"3"},
 		"can_administer_channel_group": {"4"},
-		"topics_policy":                {"allow_empty_topic"},
+		"topics_policy":                {`"allow_empty_topic"`},
 		"message_retention_days":       {`"unlimited"`},
 	}
 	if !reflect.DeepEqual(params, want) {

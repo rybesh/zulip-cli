@@ -204,11 +204,11 @@ func TestRequestParameters(t *testing.T) {
 			do: func(c *Client) error {
 				req := SubscribeRequest{
 					Subscriptions: []ChannelSubscription{{Name: "engineering"}},
-					ChannelSettings: ChannelSettings{
+					ChannelSettings: ChannelSettings{ChannelPermissions: ChannelPermissions{
 						CanSendMessageGroup: types.NamedGroup(15),
 						CanAddSubscribersGroup: types.AnonymousGroup(
 							[]int{10}, []int{11}),
-					},
+					}},
 				}
 				_, err := c.Subscribe(req)
 				return err
@@ -238,12 +238,56 @@ func TestRequestParameters(t *testing.T) {
 			name: "update channel: who may post is sent as a group-setting update",
 			do: func(c *Client) error {
 				_, err := c.UpdateStream(UpdateStreamRequest{
-					StreamID:            1,
-					CanSendMessageGroup: types.NamedGroup(15),
+					StreamID: 1,
+					ChannelPermissions: ChannelPermissions{
+						CanSendMessageGroup: types.NamedGroup(15),
+					},
 				})
 				return err
 			},
 			want: url.Values{"can_send_message_group": {`{"new":15}`}},
+		},
+		{
+			name: "update channel: every permission travels as a group-setting update",
+			do: func(c *Client) error {
+				_, err := c.UpdateStream(UpdateStreamRequest{
+					StreamID: 1,
+					ChannelPermissions: ChannelPermissions{
+						CanAdministerChannelGroup: types.NamedGroup(15),
+						CanResolveTopicsGroup:     types.AnonymousGroup([]int{10}, []int{11}),
+					},
+				})
+				return err
+			},
+			want: url.Values{
+				"can_administer_channel_group": {`{"new":15}`},
+				"can_resolve_topics_group": {
+					`{"new":{"direct_members":[10],"direct_subgroups":[11]}}`},
+			},
+		},
+		{
+			name: "subscribe: the topics policy travels as JSON",
+			do: func(c *Client) error {
+				policy := "disable_empty_topic"
+				req := SubscribeRequest{
+					Subscriptions:   []ChannelSubscription{{Name: "engineering"}},
+					ChannelSettings: ChannelSettings{TopicsPolicy: &policy},
+				}
+				_, err := c.Subscribe(req)
+				return err
+			},
+			want: url.Values{
+				"subscriptions": {`[{"name":"engineering"}]`},
+				"topics_policy": {`"disable_empty_topic"`},
+			},
+		},
+		{
+			name: "remove default channel: the channel travels as a query parameter",
+			do: func(c *Client) error {
+				_, err := c.RemoveDefaultStream(7)
+				return err
+			},
+			want: url.Values{"stream_id": {"7"}},
 		},
 	}
 

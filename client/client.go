@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -119,6 +122,28 @@ type FormFile struct {
 	// not the local path the user happened to type.
 	Filename string
 	Reader   io.Reader
+}
+
+// detectContentType finds the type the server should store with an upload:
+// from the file name's extension, else by sniffing the content, else
+// application/octet-stream. The server serves the file back with this type,
+// and previews images only when it is an image type. It returns a reader that
+// still yields the whole file.
+func detectContentType(file FormFile) (string, io.Reader, error) {
+	if t := mime.TypeByExtension(strings.ToLower(filepath.Ext(file.Filename))); t != "" {
+		return t, file.Reader, nil
+	}
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file.Reader, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return "", nil, err
+	}
+	head = head[:n]
+	reader := io.MultiReader(bytes.NewReader(head), file.Reader)
+	if n == 0 {
+		return "application/octet-stream", reader, nil
+	}
+	return http.DetectContentType(head), reader, nil
 }
 
 // NewClient creates a new Zulip API client from environment variables
@@ -315,11 +340,18 @@ func (c *Client) doRequestContext(ctx context.Context, timeout time.Duration, me
 
 		// Add files
 		for fieldName, file := range files {
-			part, err := writer.CreateFormFile(fieldName, file.Filename)
+			contentType, reader, err := detectContentType(file)
 			if err != nil {
 				return nil, err
 			}
-			if _, err := io.Copy(part, file.Reader); err != nil {
+			part, err := writer.CreatePart(textproto.MIMEHeader{
+				"Content-Disposition": {multipart.FileContentDisposition(fieldName, file.Filename)},
+				"Content-Type":        {contentType},
+			})
+			if err != nil {
+				return nil, err
+			}
+			if _, err := io.Copy(part, reader); err != nil {
 				return nil, err
 			}
 		}

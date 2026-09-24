@@ -773,7 +773,7 @@ zulip-cli/
 
 ### Prerequisites
 
-- Go 1.23 or higher
+- Go 1.25 or higher
 - Access to a Zulip server for testing
 
 ### Building

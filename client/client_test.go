@@ -1,9 +1,11 @@
 package client
 
 import (
+	"bytes"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -320,11 +322,17 @@ func TestNoWarningWhenEveryParameterIsProcessed(t *testing.T) {
 	}
 }
 
-// uploadServer records the field name and file name of the first uploaded part.
-func uploadServer(t *testing.T, body string) (*Client, func() (field, filename string)) {
+// upload is what uploadServer saw of the first uploaded part.
+type upload struct {
+	Field, Filename, ContentType string
+	Content                      []byte
+}
+
+// uploadServer records the first uploaded part.
+func uploadServer(t *testing.T, body string) (*Client, func() upload) {
 	t.Helper()
 	var mu sync.Mutex
-	var field, filename string
+	var got upload
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
@@ -332,7 +340,11 @@ func uploadServer(t *testing.T, body string) (*Client, func() (field, filename s
 		} else {
 			mu.Lock()
 			for name, headers := range r.MultipartForm.File {
-				field, filename = name, headers[0].Filename
+				got = upload{Field: name, Filename: headers[0].Filename, ContentType: headers[0].Header.Get("Content-Type")}
+				if f, err := headers[0].Open(); err == nil {
+					got.Content, _ = io.ReadAll(f)
+					f.Close()
+				}
 			}
 			mu.Unlock()
 		}
@@ -340,10 +352,10 @@ func uploadServer(t *testing.T, body string) (*Client, func() (field, filename s
 	}))
 	t.Cleanup(srv.Close)
 
-	return testClient(t, Config{URL: srv.URL}), func() (string, string) {
+	return testClient(t, Config{URL: srv.URL}), func() upload {
 		mu.Lock()
 		defer mu.Unlock()
-		return field, filename
+		return got
 	}
 }
 
@@ -355,7 +367,8 @@ func TestUploadFileSendsBaseName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	field, filename := uploaded()
+	got := uploaded()
+	field, filename := got.Field, got.Filename
 	if field != "file" {
 		t.Errorf("field name = %q, want file", field)
 	}
@@ -371,12 +384,77 @@ func TestUploadCustomEmojiSendsBaseName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	field, filename := uploaded()
+	got := uploaded()
+	field, filename := got.Field, got.Filename
 	if field != "file" {
 		t.Errorf("field name = %q, want file", field)
 	}
 	// The extension is how the server recognizes the image format.
 	if filename != "smiley.png" {
 		t.Errorf("stored file name = %q, want smiley.png", filename)
+	}
+}
+
+// pngHeader is enough of a PNG for content sniffing to recognize it.
+var pngHeader = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+
+// The server stores the part's type with the upload and serves the file back
+// with it, so an image sent as application/octet-stream gets no preview.
+func TestUploadFileSendsContentType(t *testing.T) {
+	tests := []struct {
+		name, filename string
+		content        []byte
+		want           string
+	}{
+		{"from extension", "photo.jpg", []byte("not really a jpeg"), "image/jpeg"},
+		{"extension case", "PHOTO.PNG", []byte("x"), "image/png"},
+		{"sniffed without extension", "photo", pngHeader, "image/png"},
+		{"sniffed unknown extension", "photo.zzunknown", pngHeader, "image/png"},
+		{"unrecognizable", "blob", []byte{0x00, 0x01, 0x02, 0xff}, "application/octet-stream"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, uploaded := uploadServer(t, `{"result":"success","uri":"/user_uploads/1/x/f"}`)
+
+			if _, err := c.UploadFile(bytes.NewReader(tt.content), tt.filename); err != nil {
+				t.Fatal(err)
+			}
+
+			got := uploaded()
+			if got.ContentType != tt.want {
+				t.Errorf("Content-Type = %q, want %q", got.ContentType, tt.want)
+			}
+			// Sniffing reads ahead; the whole file must still arrive.
+			if !bytes.Equal(got.Content, tt.content) {
+				t.Errorf("content = %q, want %q", got.Content, tt.content)
+			}
+		})
+	}
+}
+
+func TestUploadCustomEmojiSendsContentType(t *testing.T) {
+	c, uploaded := uploadServer(t, `{"result":"success"}`)
+
+	if _, err := c.UploadCustomEmoji("smiley", "../art/smiley.png", bytes.NewReader(pngHeader)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := uploaded().ContentType; got != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", got)
+	}
+}
+
+// The part header is built with CreatePart rather than CreateFormFile, so a
+// name that needs escaping must still reach the server intact.
+func TestUploadFileEscapesFilename(t *testing.T) {
+	c, uploaded := uploadServer(t, `{"result":"success","uri":"/user_uploads/1/x/f"}`)
+
+	name := `say "hi" \ bye.txt`
+	if _, err := c.UploadFile(strings.NewReader("hi"), name); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := uploaded().Filename; got != name {
+		t.Errorf("stored file name = %q, want %q", got, name)
 	}
 }
